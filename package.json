@@ -128,6 +128,11 @@
         "command": "dynamicLiveplot.switchFile",
         "title": "Open Another Data File\u2026",
         "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.applyLayout",
+        "title": "Apply Layout",
+        "category": "Dynamic Liveplot"
       }
     ],
     "menus": {
@@ -202,6 +207,10 @@
         {
           "command": "dynamicLiveplot.toggleColumns",
           "when": "dynamicLiveplot.active"
+        },
+        {
+          "command": "dynamicLiveplot.applyLayout",
+          "when": "false"
         }
       ]
     }

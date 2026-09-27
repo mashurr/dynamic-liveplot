@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { DataClient } from './dataClient';
 import { Layouts } from './layouts';
 import { Panel } from './panel';
+import type { Layout } from './view/protocol';
 
 const DATA_GLOB = '**/*.{csv,tsv,txt,jsonl,ndjson,json,sqlite,sqlite3,db,parquet,xlsx}';
 const EDITOR = 'dynamicLiveplot.file';
@@ -64,6 +65,9 @@ export function activate(ctx: vscode.ExtensionContext) {
         vscode.commands.registerCommand('dynamicLiveplot.openCurrentFile', (p?: Panel) => {
             const file = (p instanceof Panel ? p : Panel.active)?.currentFile;
             if (file) { void openFile(vscode.Uri.file(file)); }
+        }),
+        vscode.commands.registerCommand('dynamicLiveplot.applyLayout', (layout: Layout, name?: string) => {
+            if (Panel.active && layout?.plots) { Panel.active.applyLayout(layout, 'named', name); }
         }),
         vscode.commands.registerCommand('dynamicLiveplot.switchFile', async (p?: Panel) => {
             const panel = p instanceof Panel ? p : Panel.active;

@@ -2,10 +2,11 @@
 
 import './charts/index';
 import { TYPES, glyph } from './charts/registry';
-import { autoPlot } from './autoplot';
+import { afterAdd, extensions, groupSections } from './hooks';
+import './options';
 import { answered, ask, notify, run } from './host';
 import { renderInspector, KIND_GLYPH, KIND_NAME, type InspectorHooks } from './inspector';
-import { gridPicker, showMenu, type MenuItem } from './menus';
+import { gridPicker, showMenu } from './menus';
 import { alertCount, disposeChart, renderChart, setGlListener, type CardRef } from './render';
 import { autoAssign, cols, colInfo, dn, fromLayout, kindOf, newPlot, plotCols, remapSlots, S, saveSoon, send, uid, vscode, type Plot } from './state';
 import type { HostToView } from '../src/view/protocol';
@@ -14,18 +15,6 @@ import { $, $$, clone, el, esc, fmt, fmtInt, fmtTime, ic } from './util';
 interface UIRefs { lp: HTMLElement; tool: HTMLElement; banner: HTMLElement; colsBox: HTMLElement; list: HTMLElement; wrap: HTMLElement; stack: HTMLElement; insp: HTMLElement; cards: Map<number, CardRef>; cro: ResizeObserver }
 let UI: UIRefs | null = null;
 let dirty = false;
-
-/** Features added by later modules: toolbar buttons, menu items and chart-type pickers. */
-export const extensions = {
-    toolbarRight: [] as (() => string)[],
-    wireToolbar: [] as ((tool: HTMLElement) => void)[],
-    layoutMenu: [] as (() => MenuItem[])[],
-    plotMenu: [] as ((p: Plot) => MenuItem[])[],
-    openTypes: (p: Plot) => { select(p.id); },
-    recommend: (colsList: string[]): string[] => (colsList.some(c => kindOf(c) === 'num') ? ['line'] : []),
-    autoPlot: () => autoPlot(),
-    commands: {} as Record<string, () => void>,
-};
 
 /* ---------- messages from the extension ---------- */
 window.addEventListener('message', e => onHost(e.data as HostToView));
@@ -364,7 +353,6 @@ export function newPlotWith(col: string) {
     S.plots.push(p); S.sel = p.id; changed(true);
     return p;
 }
-export const afterAdd: ((p: Plot, slot: string, col: string) => void)[] = [];
 function dropOnPlot(p: Plot, col: string) {
     const r = autoAssign(p, col);
     if (r === 'dup') { notify(`${dn(col)} is already on "${p.title}".`); return; }
@@ -397,8 +385,6 @@ function layoutGrid() {
     const rowH = Math.max(190, Math.floor(h / S.grid.rows));
     for (const g of $$('.lp-grid', UI.stack)) { g.style.gridTemplateColumns = `repeat(${S.grid.columns}, minmax(0, 1fr))`; g.style.gridAutoRows = rowH + 'px'; }
 }
-
-export const groupSections: ((stack: HTMLElement, makeCard: (p: Plot) => HTMLElement) => Set<number>)[] = [];
 
 function renderGrid() {
     if (!UI) { return; }
@@ -485,6 +471,7 @@ export function select(id: number | null) {
     renderInspectorNow();
 }
 document.addEventListener('lp-select', e => select((e as CustomEvent<number>).detail));
+document.addEventListener('lp-structure', () => changed(true));
 document.addEventListener('lp-alert', e => {
     const id = (e as CustomEvent<number>).detail, ref = UI?.cards.get(id);
     ref?.card.classList.toggle('alert', !!S.alerts[id]);
