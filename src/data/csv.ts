@@ -2,6 +2,8 @@
 // being written (or a quoted cell spanning lines) is held back until the rest arrives.
 
 const QUOTE = 34, NL = 10;
+/** Stands in for a record the caller said it doesn't want (it still counts as a row). */
+export const SKIPPED: string[] = [];
 const CANDIDATES = [',', '\t', ';', '|'];
 
 export class CsvTokenizer {
@@ -13,12 +15,17 @@ export class CsvTokenizer {
 
     constructor(readonly delimiter: string) { this.delim = delimiter.charCodeAt(0); }
 
-    /** True while a record has started but not finished. */
+    /** Asked once per complete record; false means emit SKIPPED instead of splitting it into cells. */
+    want: (() => boolean) | null = null;
+
+    /** True while inside a quoted cell (a newline there doesn't end a record). */
+    get quoted(): boolean { return this.inQuotes || this.quoteAtEnd; }
+
     get pending(): boolean { return this.inQuotes || this.field !== '' || this.record.length > 0; }
 
     feed(chunk: string, out: string[][]) {
-        const n = chunk.length, D = this.delim;
-        let i = 0, start = 0;
+        const n = chunk.length, D = this.delim, want = this.want;
+        let i = 0, start = 0, nextQuote = -2;
         if (this.quoteAtEnd) {
             this.quoteAtEnd = false;
             if (n && chunk.charCodeAt(0) === QUOTE) { this.field += '"'; i = start = 1; } else { this.inQuotes = false; }
@@ -27,10 +34,11 @@ export class CsvTokenizer {
             // Fast path: a whole line without quotes splits natively in one call
             if (!this.inQuotes && i === start && this.field === '' && this.record.length === 0) {
                 const nl = chunk.indexOf('\n', i);
-                const q = nl < 0 ? 0 : chunk.indexOf('"', i);
-                if (nl >= 0 && (q < 0 || q > nl)) {
+                // The next quote is found once and reused, so quote-free chunks aren't rescanned per line
+                if (nl >= 0 && nextQuote !== -1 && nextQuote < i) { nextQuote = chunk.indexOf('"', i); }
+                if (nl >= 0 && (nextQuote === -1 || nextQuote > nl)) {
                     const end = nl > i && chunk.charCodeAt(nl - 1) === 13 ? nl - 1 : nl;
-                    if (end > i) { out.push(chunk.slice(i, end).split(this.delimiter)); }
+                    if (end > i) { out.push(want && !want() ? SKIPPED : chunk.slice(i, end).split(this.delimiter)); }
                     i = start = nl + 1;
                     continue;
                 }
@@ -51,7 +59,7 @@ export class CsvTokenizer {
                 let f = this.field + chunk.slice(start, i);
                 if (f.charCodeAt(f.length - 1) === 13) { f = f.slice(0, -1); }
                 this.record.push(f);
-                if (this.record.length > 1 || this.record[0] !== '') { out.push(this.record); }
+                if (this.record.length > 1 || this.record[0] !== '') { out.push(want && !want() ? SKIPPED : this.record); }
                 this.record = []; this.field = ''; i++; start = i;
             } else if (c === QUOTE && i === start && this.field === '') {
                 this.inQuotes = true; i++; start = i;

@@ -29,7 +29,9 @@ export type ToWorker =
     | { type: 'open'; id: number; spec: SourceSpec; options?: OpenOptions }
     | { type: 'close'; id: number }
     /** Send the schema and every kept row again (a webview reloaded). */
-    | { type: 'resend'; id: number };
+    | { type: 'resend'; id: number }
+    /** Read every row in [from, to) of the file (rows counted from 0), for detail inside an overview. */
+    | { type: 'range'; id: number; from: number; to: number };
 
 /** New values for one column. Rows are absolute: row 0 is the first data row of the file. */
 export interface ColumnDelta {
@@ -57,8 +59,10 @@ export type FromWorker =
     | { type: 'schema'; id: number; file: string; format: Format; columns: ColumnInfo[]; reason: SchemaReason }
     | { type: 'rows'; id: number; first: number; count: number; dropped: number; columns: ColumnDelta[] }
     | { type: 'bindings'; id: number; bindings: Record<string, string> }
-    | { type: 'status'; id: number; file: string; state: 'waiting' | 'reading' | 'tailing' | 'missing'; bytesRead: number; size: number; rows: number; lastGrowth: number; badLines: number }
+    | { type: 'status'; id: number; file: string; state: 'waiting' | 'reading' | 'tailing' | 'missing'; bytesRead: number; size: number; rows: number; lastGrowth: number; badLines: number; stride: number; fileRows: number }
     | { type: 'renamed'; id: number; from: string; to: string }
     /** Tables (SQLite), sheets (Excel) or the one table of a Parquet file; sent before any data. */
     | { type: 'tables'; id: number; file: string; tables: TableInfo[]; table: string | null }
-    | { type: 'error'; id: number; message: string };
+    | { type: 'error'; id: number; message: string }
+    /** Every row of a range, answering `range`. */
+    | { type: 'detail'; id: number; first: number; count: number; columns: ColumnInfo[]; deltas: ColumnDelta[] };

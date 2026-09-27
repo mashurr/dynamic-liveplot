@@ -3,7 +3,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { CsvTokenizer, headerNames, looksHeaderless, sniffDelimiter } from './csv';
+import { CsvTokenizer, headerNames, looksHeaderless, SKIPPED, sniffDelimiter } from './csv';
 import { detectKind, isEmpty, toArray, toBindings, toNum, toText, toTime, type Detected } from './detect';
 import { FolderWatch } from './folder';
 import { flatten, jsonRows } from './json';
@@ -58,6 +58,11 @@ export class Source {
     private lastGrowth = 0;
     private badLines = 0;
     private progress = 0;
+    /** Keep one row in `stride` (an overview of a file too big to keep whole). */
+    private stride = 1;
+    private fileRows = 0;
+    private added = 0;
+    private index: { offset: number; row: number }[] = [];
     private state: State = 'waiting';
     private schemaSent = false;
     private timer: NodeJS.Timeout | null = null;
@@ -140,6 +145,7 @@ export class Source {
         this.keys = new Map(); this.lineRest = ''; this.jsonParts = []; this.jsonBytes = 0;
         this.detected = []; this.bindingCol = -1; this.buffered = []; this.ready = false;
         this.caughtUp = false; this.lastGrowth = 0; this.badLines = 0;
+        this.stride = 1; this.fileRows = 0; this.added = 0; this.index = [];
         this.table = null; this.lastRowid = 0;
         if (this.format === 'sqlite' || this.format === 'parquet' || this.format === 'xlsx') {
             this.tail = null;
@@ -187,6 +193,9 @@ export class Source {
             this.lastRowid = r.lastRowid;
             for (const row of r.rows) { this.object(row); }
         } else if (this.format === 'parquet') {
+            const info = (await parquetInfo(this.file))[0];
+            const keep = this.store.keepFor(info.columns);
+            if (info.rows > keep * 1.2) { this.stride = Math.ceil(info.rows / keep); }
             await parquetRows(this.file, (rows, done) => { for (const row of rows) { this.object(row); } this.progress = done; this.scheduleFlush(); });
         } else {
             for (const row of excelRows(this.file, table)) { this.object(row); }
@@ -312,6 +321,96 @@ export class Source {
         let text = this.decoder.decode(buf, { stream: true });
         if (this.first) { if (text.charCodeAt(0) === 0xfeff) { text = text.slice(1); } this.first = false; }
         if (this.format === 'jsonl') { this.feedLines(text); } else { this.feedCsv(text); }
+        this.noteIndex(buf);
+        this.decideStride();
+    }
+
+    /** Remember where records start, about every megabyte, so a range can be read later without re-reading from the top. */
+    private noteIndex(buf: Buffer) {
+        if (!this.tail || (this.format === 'csv' && (!this.csv || this.csv.quoted))) { return; }
+        const nl = buf.lastIndexOf(10);
+        if (nl < 0) { return; }
+        const offset = this.tail.position - buf.length + nl + 1, last = this.index[this.index.length - 1];
+        if (!last || offset - last.offset >= 1 << 20) { this.index.push({ offset, row: this.fileRows }); }
+    }
+
+    /** During the first read, estimate the file's rows; if they won't fit the budget, keep an evenly spaced overview. */
+    private decideStride() {
+        if (this.stride > 1 || this.caughtUp || !this.tail || this.fileRows < 2000 || !this.ready) { return; }
+        const perRow = this.tail.position / this.fileRows, estimate = this.tail.size / perRow, keep = this.store.keep();
+        if (estimate > keep * 1.2) { this.setStride(Math.ceil(estimate / keep)); }
+    }
+
+    /** Switch to keeping one row in `k`, thinning the rows kept so far to match. */
+    private setStride(k: number) {
+        const seen = this.store.rows;
+        this.store.thin(k);
+        this.stride = k;
+        this.added = seen;
+        this.postSchema('columns');
+    }
+
+    /** The estimate was low and the overview is about to overflow: keep every other row and double the stride. */
+    private widenStride() {
+        const seen = this.added - 1;
+        this.store.thin(2);
+        this.stride *= 2;
+        this.added = seen + 1;
+        this.postSchema('columns');
+    }
+
+    /** Read every row in [from, to) and send it as detail. */
+    async range(from: number, to: number) {
+        try {
+            const count = Math.max(0, Math.min(to, from + this.store.keep()) - from);
+            const detail = new Store(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
+            for (const c of this.store.columns) { detail.addColumn(c.name, c.kind); }
+            const take = (r: unknown[]) => { detail.append(this.cells(r, detail)); };
+            if (this.format === 'parquet') {
+                await parquetRows(this.file, rows => { for (const row of rows) { take(this.rawOf(row)); } }, count, from, from + count);
+            } else if (this.format === 'csv' || this.format === 'jsonl') {
+                await this.readRange(from, count, take);
+            } else {
+                throw new Error('Detail ranges are only for CSV, JSON Lines and Parquet files.');
+            }
+            const d = detail.delta(0);
+            this.post({ type: 'detail', id: this.id, first: from, count: detail.rows, columns: detail.schema(), deltas: d.columns });
+        } catch (e) { this.error(`Couldn't read that range: ${(e as Error).message}`); }
+    }
+
+    private rawOf(flat: Record<string, unknown>): unknown[] {
+        const arr: unknown[] = [];
+        for (const [k, v] of Object.entries(flat)) { const i = this.keys.get(k); if (i !== undefined) { arr[i] = v; } }
+        return arr;
+    }
+
+    private async readRange(from: number, count: number, take: (r: unknown[]) => void) {
+        let start = { offset: 0, row: -1 };
+        for (const e of this.index) { if (e.row <= from) { start = e; } else { break; } }
+        const fd = fs.openSync(this.file, 'r');
+        try {
+            const buf = Buffer.allocUnsafe(1 << 20), decoder = new TextDecoder('utf-8');
+            const tok = this.format === 'csv' ? new CsvTokenizer(this.csv?.delimiter ?? ',') : null;
+            let pos = start.offset, row = start.row, rest = '', got = 0;
+            // row -1 means we start at the file's top and must pass the header first
+            const handle = (r: unknown[]) => { if (row >= from && got < count) { take(r); got++; } row++; };
+            while (got < count) {
+                const n = fs.readSync(fd, buf, 0, buf.length, pos);
+                if (n <= 0) { break; }
+                pos += n;
+                let text = decoder.decode(buf.subarray(0, n), { stream: true });
+                if (pos === n && text.charCodeAt(0) === 0xfeff) { text = text.slice(1); }
+                if (tok) {
+                    const recs: string[][] = [];
+                    tok.feed(text, recs);
+                    for (const r of recs) { if (row === -1 && !looksHeaderless(r)) { row = 0; continue; } if (row === -1) { row = 0; } handle(r); if (got >= count) { break; } }
+                } else {
+                    const parts = (rest + text).split('\n');
+                    rest = parts.pop() ?? '';
+                    for (const line of parts) { const t = line.trim(); if (!t) { continue; } if (row === -1) { row = 0; } let v: unknown; try { v = JSON.parse(t); } catch { continue; } handle(this.rawOf(flatten(v))); if (got >= count) { break; } }
+                }
+            }
+        } finally { fs.closeSync(fd); }
     }
 
     private feedCsv(text: string) {
@@ -322,8 +421,12 @@ export class Source {
             text = this.sniff; this.sniff = '';
         }
         const records: string[][] = [];
+        // In an overview, rows that won't be kept are only counted, not split into cells
+        let k = this.added;
+        this.csv.want = this.stride > 1 && this.ready && this.names ? () => k++ % this.stride === 0 : null;
         this.csv.feed(text, records);
         for (const r of records) {
+            if (r === SKIPPED) { this.fileRows++; this.added++; continue; }
             if (!this.names) {
                 if (looksHeaderless(r)) { this.names = r.map((_, i) => `column ${i + 1}`); this.row(r); } else { this.names = headerNames(r); }
                 continue;
@@ -369,6 +472,7 @@ export class Source {
     }
 
     private row(r: unknown[]) {
+        this.fileRows++;
         if (!this.ready) {
             this.buffered.push(r);
             if (this.buffered.length >= DETECT_ROWS) { this.finishDetect(); }
@@ -409,25 +513,36 @@ export class Source {
                 this.post({ type: 'bindings', id: this.id, bindings: this.bindings });
             }
         }
-        const cells: Cell[] = new Array(this.store.columns.length).fill(null);
+        // An overview keeps one row in `stride`
+        if (this.stride > 1 && this.added++ % this.stride !== 0) { return; }
+        if (this.stride > 1 && !this.caughtUp && this.store.rows >= this.store.keep()) { this.widenStride(); if ((this.added - 1) % this.stride !== 0) { return; } }
         let widened = false;
+        // Early on, a column of numbers that meets text becomes a text column
+        if (this.store.rows < WIDEN_ROWS) {
+            for (let i = 0; i < this.detected.length; i++) {
+                const d = this.detected[i], raw = r[i];
+                if (d && d.kind === 'num' && Number.isNaN(toNum(raw)) && !isEmpty(raw)) { this.store.widenToText(d.col); d.kind = 'text'; widened = true; }
+            }
+        }
+        this.store.append(this.cells(r, this.store));
+        if (widened) { this.store.resend(); this.postSchema('columns'); }
+    }
+
+    /** One raw row as cells for a store, using the detected kinds. */
+    private cells(r: unknown[], store: Store): Cell[] {
+        const cells: Cell[] = new Array(store.columns.length).fill(null);
         for (let i = 0; i < this.detected.length; i++) {
             const d = this.detected[i];
             if (!d) { continue; }
             const raw = r[i];
             switch (d.kind) {
-                case 'num': {
-                    const v = toNum(raw);
-                    if (Number.isNaN(v) && !isEmpty(raw) && this.store.rows < WIDEN_ROWS) { this.store.widenToText(d.col); d.kind = 'text'; widened = true; cells[d.col] = toText(raw); } else { cells[d.col] = v; }
-                    break;
-                }
+                case 'num': cells[d.col] = toNum(raw); break;
                 case 'time': cells[d.col] = toTime(raw, d.scale); break;
                 case 'text': cells[d.col] = toText(raw); break;
                 case 'array': cells[d.col] = toArray(raw); break;
             }
         }
-        this.store.append(cells);
-        if (widened) { this.store.resend(); this.postSchema('columns'); }
+        return cells;
     }
 
     private postSchema(reason: SchemaReason) {
@@ -466,7 +581,7 @@ export class Source {
     private postStatus() {
         const t = this.tail;
         const size = t ? t.size : 100, read = t ? t.position : Math.round((this.state === 'reading' ? this.progress : 1) * 100);
-        this.post({ type: 'status', id: this.id, file: this.file, state: this.state, bytesRead: read, size, rows: this.store.rows, lastGrowth: this.lastGrowth, badLines: this.badLines });
+        this.post({ type: 'status', id: this.id, file: this.file, state: this.state, bytesRead: read, size, rows: this.store.rows, lastGrowth: this.lastGrowth, badLines: this.badLines, stride: this.stride, fileRows: this.stride > 1 ? this.fileRows : this.store.rows });
     }
 
     private error(message: string) { this.post({ type: 'error', id: this.id, message }); }

@@ -105,9 +105,7 @@ export class Store {
 
     /** Rows kept before trimming: the smaller of the row budget and cells ÷ width, in whole chunks. */
     keep(): number {
-        const width = Math.max(1, this.columns.filter(c => c.kind !== 'array').length);
-        const rows = Math.min(this.budgetRows, Math.floor(this.budgetCells / width));
-        return Math.max(CHUNK, Math.ceil(rows / CHUNK) * CHUNK);
+        return this.keepFor(this.columns.filter(c => c.kind !== 'array').length);
     }
 
     /** Append one row; `cells` lines up with `columns`. */
@@ -158,6 +156,31 @@ export class Store {
             return { name: c.name, kind: 'array', packed, lengths, arrayRows: Float64Array.from(items, i => i.row) };
         });
         return { first, count: Math.max(0, to - first), columns };
+    }
+
+    /** Rows the budget allows for a given number of columns. */
+    keepFor(width: number): number {
+        const rows = Math.min(this.budgetRows, Math.floor(this.budgetCells / Math.max(1, width)));
+        return Math.max(CHUNK, Math.ceil(rows / CHUNK) * CHUNK);
+    }
+
+    /** Keep one row in `k` (an overview that needs a wider stride). Only valid while nothing was trimmed. */
+    thin(k: number) {
+        const n = Math.ceil(this.rows / k);
+        this.columns = this.columns.map(c => {
+            if (c instanceof NumColumn) { const o = new NumColumn(c.name, c.kind); for (let r = 0; r < n; r++) { o.set(r, c.get(r * k)); } return o; }
+            if (c instanceof TextColumn) {
+                const o = new TextColumn(c.name), codes = c.slice(0, this.rows);
+                for (let r = 0; r < n; r++) { const code = codes[r * k]; o.set(r, code < 0 ? null : c.dict[code]); }
+                return o;
+            }
+            const o = new ArrayColumn(c.name);
+            o.items = c.items.filter(i => i.row % k === 0).map(i => ({ row: i.row / k, values: i.values }));
+            return o;
+        });
+        this.rows = n;
+        this.offset = 0;
+        this.resend();
     }
 
     /** Forget what was sent, so the next delta carries every kept row and the whole dictionary. */

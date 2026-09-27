@@ -15,6 +15,8 @@ port.on('message', (m: ToWorker) => {
         const s = new Source(m.id, m.spec, m.options ?? {}, post);
         sources.set(m.id, s);
         s.start();
+    } else if (m.type === 'range') {
+        void sources.get(m.id)?.range(m.from, m.to);
     } else if (m.type === 'resend') {
         sources.get(m.id)?.resend();
     } else if (m.type === 'close') {

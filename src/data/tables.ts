@@ -67,13 +67,13 @@ export async function parquetInfo(file: string): Promise<TableInfo[]> {
 }
 
 /** Reads a Parquet file in chunks, calling back with each batch of rows and the share read so far. */
-export async function parquetRows(file: string, onRows: (rows: Flat[], done: number) => void, chunk = 50000) {
+export async function parquetRows(file: string, onRows: (rows: Flat[], done: number) => void, chunk = 50000, from = 0, to = Infinity) {
     const buf = await asyncBufferFromFile(file);
     const meta = await parquetMetadataAsync(buf);
-    const total = Number(meta.num_rows);
-    for (let start = 0; start < total; start += chunk) {
+    const total = Math.min(Number(meta.num_rows), to);
+    for (let start = from; start < total; start += chunk) {
         const rows = await parquetReadObjects({ file: buf, metadata: meta, compressors, rowStart: start, rowEnd: Math.min(total, start + chunk) });
-        onRows(rows.map(r => { const o: Flat = {}; for (const [k, v] of Object.entries(r)) { o[k] = plain(v); } return o; }), Math.min(1, (start + chunk) / total));
+        onRows(rows.map(r => { const o: Flat = {}; for (const [k, v] of Object.entries(r)) { o[k] = plain(v); } return o; }), Math.min(1, (start + chunk - from) / (total - from)));
     }
 }
 
