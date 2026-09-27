@@ -5,6 +5,7 @@ import { TYPES, glyph } from './charts/registry';
 import { afterAdd, extensions, groupSections } from './hooks';
 import './options';
 import './gallery';
+import './analysis';
 import { answered, ask, notify, run } from './host';
 import { renderInspector, KIND_GLYPH, KIND_NAME, type InspectorHooks } from './inspector';
 import { gridPicker, showMenu } from './menus';
@@ -47,6 +48,7 @@ function onHost(m: HostToView) {
                 S.banner = { text: m.reason === 'truncated' ? `${base(m.file)} was emptied and is being read again.` : `${base(m.file)} was replaced and has been read again.` };
             }
             S.paused = false;
+            document.dispatchEvent(new CustomEvent('lp-schema', { detail: m.reason }));
             if (UI) { renderToolbar(); renderBanner(); renderColumns(); renderGrid(); renderInspectorNow(); }
             break;
         }
@@ -83,11 +85,15 @@ function onHost(m: HostToView) {
             break;
         case 'layout':
             fromLayout(m.layout);
+            document.dispatchEvent(new CustomEvent('lp-schema', { detail: 'layout' }));
             S.banner = { text: m.origin === 'team' ? `Applied the team layout.` : `Applied layout "${m.originName ?? ''}".` };
             changed(true);
             break;
         case 'answer':
             answered(m.token, m.choice);
+            break;
+        case 'compare':
+            document.dispatchEvent(new CustomEvent('lp-compare', { detail: m }));
             break;
     }
 }
@@ -135,7 +141,7 @@ function renderShell() {
           <div class="lp-h"><span>COLUMNS</span><span class="grow"></span><span class="count"></span><button class="ibtn" data-hide title="Hide the column list to give the plots more room" aria-label="Hide the column list">${ic('chevL', 'tiny')}</button></div>
           <div class="search">${ic('search', 'tiny')}<input type="search" placeholder="Filter columns" aria-label="Filter columns"></div>
           <div class="col-list" role="list"></div>
-          <div class="col-foot">Drag a column onto a plot, a slot on the right, or New plot.</div>
+          <div class="col-foot"><button class="lnk" data-calc-add>+ Calculated column</button><br>Drag a column onto a plot, a slot on the right, or New plot.</div>
         </div>
         <div class="lp-gridwrap"><div class="lp-stack"></div></div>
         <aside class="lp-insp" aria-label="Plot settings" hidden></aside>
@@ -147,6 +153,7 @@ function renderShell() {
     search.value = S.search;
     search.oninput = () => { S.search = search.value; renderColumns(); };
     $('[data-hide]', lp).onclick = () => setColumnsHidden(true);
+    $('[data-calc-add]', lp).onclick = () => document.dispatchEvent(new CustomEvent('lp-calc-edit', { detail: null }));
     $('.rail', lp).onclick = () => setColumnsHidden(false);
     UI.wrap.addEventListener('mousedown', e => { if (e.target === UI!.wrap || e.target === UI!.stack || (e.target as HTMLElement).classList.contains('lp-grid')) { select(null); } });
     lp.addEventListener('dragend', endDrag);
@@ -279,9 +286,9 @@ function renderColumns() {
     const shown = all.filter(c => !q || c.name.toLowerCase().includes(q) || dn(c.name).toLowerCase().includes(q));
     $('.count', UI.colsBox).textContent = shown.length === all.length ? String(all.length) : `${shown.length}/${all.length}`;
     UI.list.innerHTML = !all.length ? `<div class="note">${S.status?.state === 'waiting' ? 'Waiting for data…' : 'Reading…'}</div>` : shown.length ? shown.map(c => {
-        const d = dn(c.name);
-        return `<div class="col" draggable="true" data-col="${esc(c.name)}" role="listitem" title="${KIND_NAME[c.kind]} column: drag onto a plot">
-          <span class="k">${KIND_GLYPH[c.kind]}</span><span class="n">${esc(d)}</span>
+        const d = dn(c.name), calc = S.table.col(c.name)?.calc;
+        return `<div class="col" draggable="true" data-col="${esc(c.name)}" role="listitem" title="${calc ? `calculated: ${esc(calc.formula)} (double-click to edit)` : `${KIND_NAME[c.kind]} column: drag onto a plot`}">
+          <span class="k">${calc ? 'ƒ' : KIND_GLYPH[c.kind]}</span><span class="n">${esc(d)}</span>
           ${d !== c.name ? `<span class="raw">${esc(c.name)}</span>` : '<span class="v" data-v></span>'}
           <canvas width="92" height="40"></canvas>
           <button class="add" title="Add to the selected plot, or make a new one" aria-label="Add ${esc(d)}">${ic('plus', 'tiny')}</button></div>`;
@@ -289,7 +296,7 @@ function renderColumns() {
     for (const n of $$('.col', UI.list)) {
         const col = n.dataset.col!;
         n.addEventListener('dragstart', e => { e.dataTransfer!.setData('text/plain', col); e.dataTransfer!.effectAllowed = 'copy'; startDrag(col); });
-        n.addEventListener('dblclick', () => quickAdd(col));
+        n.addEventListener('dblclick', () => { if (S.table.col(col)?.calc) { document.dispatchEvent(new CustomEvent('lp-calc-edit', { detail: col })); } else { quickAdd(col); } });
         ($('.add', n) as HTMLButtonElement).onclick = e => { e.stopPropagation(); quickAdd(col); };
     }
     updateColumnValues();
@@ -500,6 +507,10 @@ export function select(id: number | null) {
 }
 document.addEventListener('lp-select', e => select((e as CustomEvent<number>).detail));
 document.addEventListener('lp-structure', () => changed(true));
+document.addEventListener('lp-dirty', () => { dirty = true; });
+document.addEventListener('lp-columns', () => { renderColumns(); renderInspectorNow(); });
+document.addEventListener('lp-toolbar', () => renderToolbar());
+document.addEventListener('lp-redraw', e => { const r = UI?.cards.get((e as CustomEvent<number>).detail); if (r) { renderChart(r, true); } });
 document.addEventListener('lp-retitle', e => { const p = S.plots.find(x => x.id === (e as CustomEvent<number>).detail); if (p?.autoTitle) { p.title = autoTitle(p); } });
 document.addEventListener('lp-alert', e => {
     const id = (e as CustomEvent<number>).detail, ref = UI?.cards.get(id);

@@ -6,6 +6,7 @@ import { TYPES } from './charts/registry';
 import { makeCtx, theme, type Built } from './charts/ctx';
 import { Pending } from './charts/other';
 import { ask } from './host';
+import { chartCreated, decorate } from './hooks';
 import { missingSlots, plotCols, colInfo, S, send, type Plot } from './state';
 import { $$, esc, fmt, ic } from './util';
 
@@ -54,7 +55,7 @@ export function renderChart(ref: CardRef, force = false) {
     const p = ref.p, T = TYPES[p.type];
     if (!T) { return; }
     const t = S.table;
-    const ver = `${t.version}|${S.paused}|${S.pausedRows}`;
+    const ver = `${t.version}|${S.paused}|${S.pausedRows}|${S.cmp?.version ?? 0}|${S.cmpFile ?? ''}`;
     const sigBase = JSON.stringify([p.type, p.slots, p.series, p.options, p.title, S.bindings, S.fileBindings, S.linkZoom, themeKey(), t.schemaVersion]);
     if (!force && ref.ver === ver && ref.sigBase === sigBase) { return; }
     ref.ver = ver;
@@ -78,7 +79,9 @@ export function renderChart(ref: CardRef, force = false) {
             renderChips(ref);
         });
         ref.chart.getZr().on('dblclick', () => ref.chart?.dispatchAction({ type: 'dataZoom', start: 0, end: 100 }));
+        for (const f of chartCreated) { f(p, ref as CardRef & { chart: echarts.ECharts }); }
     }
+    for (const f of decorate) { f(p, out.option, ref); }
     hint.hidden = true;
     const struct = sigBase + '|' + ((out.option.series ?? []) as { id?: string; type?: string }[]).map(s => `${s.id}:${s.type}`).join(',');
     try {
@@ -109,7 +112,7 @@ export function renderChips(ref: CardRef) {
     const out = ref.out, p = ref.p;
     let h = S.alerts[p.id] ? `<span class="alert-badge">${ic('flag', 'tiny')} Limit</span>` : '';
     if (out?.chips?.length) {
-        h += out.chips.map(c => `<span class="chip ${(p.hidden ?? []).includes(c.name) ? 'off' : ''}" data-name="${esc(c.name)}" title="Click to hide or show" role="button" tabindex="0"><i style="background:${c.color}"></i>${esc(c.label ?? c.name)}${c.value !== undefined ? ` <b>${fmt(c.value)}</b>` : ''}</span>`).join('');
+        h += out.chips.map(c => `<span class="chip ${(p.hidden ?? []).includes(c.name) ? 'off' : ''}" data-name="${esc(c.name)}" title="Click to hide or show" role="button" tabindex="0"><i style="${c.dashed ? `background:transparent;border:1.5px dashed ${c.color}` : `background:${c.color}`}"></i>${esc(c.label ?? c.name)}${c.value !== undefined ? ` <b>${fmt(c.value)}</b>` : ''}</span>`).join('');
     }
     if (out?.summary) { h += `<span class="summary">${esc(out.summary)}</span>`; }
     ref.legend.innerHTML = h;

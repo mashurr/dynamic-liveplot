@@ -14,4 +14,8 @@ export const extensions = {
     commands: {} as Record<string, () => void>,
 };
 export const afterAdd: ((p: Plot, slot: string, col: string) => void)[] = [];
+/** Adjust a built chart option before it's applied (measurement lines, overlays). */
+export const decorate: ((p: Plot, option: Record<string, unknown>, ref: { chart: unknown; card: HTMLElement }) => void)[] = [];
+/** Called once when a card's chart is created. */
+export const chartCreated: ((p: Plot, ref: { chart: import('echarts').ECharts; card: HTMLElement; host: HTMLElement }) => void)[] = [];
 export const groupSections: ((stack: HTMLElement, makeCard: (p: Plot) => HTMLElement) => Set<number>)[] = [];
