@@ -38,3 +38,24 @@ export function buildCart(ctx: Ctx, mode: 'line' | 'area' | 'step' | 'stack'): B
         chips, latest,
     };
 }
+
+/** One number split by a text column, drawn as flowing bands. */
+export function buildStream(ctx: Ctx): Built {
+    const V = ctx.V, c = ctx.one('y')!, split = ctx.one('split')!, X = ctx.x, Yv = ctx.num(c), cats = ctx.col(split);
+    const names = uniqOrdered(cats).slice(0, 10) as string[];
+    const xs = X.filter((v): v is number => v !== null);
+    const lo = Math.min(...xs), hi = Math.max(...xs), nb = 60, w = (hi - lo) / nb || 1;
+    const acc = new Map<string, [number, number]>();
+    for (let j = 0; j < X.length; j++) {
+        const xv = X[j], yv = Yv[j];
+        if (xv === null || yv === null || !names.includes(cats[j] as string)) { continue; }
+        const k = Math.min(nb - 1, Math.floor((xv - lo) / w)) + '|' + cats[j];
+        const e = acc.get(k) ?? [0, 0]; e[0] += yv; e[1]++; acc.set(k, e);
+    }
+    const data: (number | string)[][] = [];
+    for (let k = 0; k < nb; k++) { for (const n of names) { const e = acc.get(k + '|' + n); data.push([lo + (k + 0.5) * w, e ? e[0] / e[1] : 0, n]); } }
+    return {
+        option: base(ctx, { color: names.map((_, i) => pal(i)), tooltip: { trigger: 'axis', confine: true, backgroundColor: V.menu, borderColor: V.menuBorder, textStyle: { color: V.fg }, axisPointer: { type: 'line', lineStyle: { color: V.axis } } }, singleAxis: { type: ctx.timeX ? 'time' : 'value', top: 10, bottom: 28, left: 12, right: 12, axisLabel: { color: V.axis, fontFamily: V.mono, fontSize: 10.5, hideOverlap: true }, axisLine: { lineStyle: { color: V.border } }, splitLine: { show: false } }, series: [{ type: 'themeRiver', id: 'river', data, label: { show: false }, emphasis: { focus: 'self' } }] }),
+        chips: names.map((n, i) => ({ name: n, color: pal(i) })),
+    };
+}
