@@ -1,0 +1,34 @@
+{
+  "name": "dynamic-liveplot",
+  "displayName": "Dynamic Liveplot",
+  "description": "Plot any data file, live or static, with any chart type.",
+  "version": "0.0.1",
+  "publisher": "mashurr",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mashurr/dynamic-liveplot.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Visualization",
+    "Data Science",
+    "Other"
+  ],
+  "scripts": {
+    "compile": "npm run typecheck && node esbuild.mjs",
+    "typecheck": "tsc -p .",
+    "watch": "node esbuild.mjs --watch",
+    "lint": "eslint src"
+  },
+  "devDependencies": {
+    "@types/node": "20.x",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^9.25.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.0"
+  }
+}
