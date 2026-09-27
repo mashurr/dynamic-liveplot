@@ -17,15 +17,206 @@
     "Data Science",
     "Other"
   ],
+  "activationEvents": [
+    "onWebviewPanel:dynamicLiveplot.folder"
+  ],
+  "main": "./out/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "dynamicLiveplot.file",
+        "displayName": "Dynamic Liveplot",
+        "selector": [
+          {
+            "filenamePattern": "*.csv"
+          },
+          {
+            "filenamePattern": "*.tsv"
+          },
+          {
+            "filenamePattern": "*.jsonl"
+          },
+          {
+            "filenamePattern": "*.ndjson"
+          },
+          {
+            "filenamePattern": "*.json"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "dynamicLiveplot.open",
+        "title": "Open in Dynamic Liveplot",
+        "category": "Dynamic Liveplot",
+        "icon": "$(graph-line)"
+      },
+      {
+        "command": "dynamicLiveplot.watchFolder",
+        "title": "Watch Folder in Dynamic Liveplot",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.addPlot",
+        "title": "Add Plot",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.autoPlot",
+        "title": "Auto-plot Again",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.togglePause",
+        "title": "Pause or Resume Updates",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.toggleColumns",
+        "title": "Show or Hide the Column List",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.changeChartType",
+        "title": "Change Chart Type\u2026",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.editBindings",
+        "title": "Edit Bindings\u2026",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.export",
+        "title": "Export\u2026",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.linkZoom",
+        "title": "Link or Unlink Zoom Across Plots",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.openAsText",
+        "title": "Open File as Text",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.reveal",
+        "title": "Reveal File in Explorer",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.watchParent",
+        "title": "Watch This File's Folder",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.openCurrentFile",
+        "title": "Open the Current File on Its Own",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.switchFile",
+        "title": "Open Another Data File\u2026",
+        "category": "Dynamic Liveplot"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "dynamicLiveplot.open",
+          "when": "resourceExtname =~ /^\\.(csv|tsv|jsonl|ndjson|json)$/ && activeCustomEditorId != 'dynamicLiveplot.file'",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "dynamicLiveplot.open",
+          "when": "!explorerResourceIsFolder && resourceExtname =~ /^\\.(csv|tsv|jsonl|ndjson|json)$/",
+          "group": "navigation@9"
+        },
+        {
+          "command": "dynamicLiveplot.watchFolder",
+          "when": "explorerResourceIsFolder",
+          "group": "navigation@9"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "dynamicLiveplot.watchParent",
+          "when": "false"
+        },
+        {
+          "command": "dynamicLiveplot.reveal",
+          "when": "false"
+        },
+        {
+          "command": "dynamicLiveplot.openCurrentFile",
+          "when": "false"
+        },
+        {
+          "command": "dynamicLiveplot.openAsText",
+          "when": "false"
+        },
+        {
+          "command": "dynamicLiveplot.switchFile",
+          "when": "false"
+        },
+        {
+          "command": "dynamicLiveplot.linkZoom",
+          "when": "dynamicLiveplot.active"
+        },
+        {
+          "command": "dynamicLiveplot.addPlot",
+          "when": "dynamicLiveplot.active"
+        },
+        {
+          "command": "dynamicLiveplot.editBindings",
+          "when": "dynamicLiveplot.active"
+        },
+        {
+          "command": "dynamicLiveplot.export",
+          "when": "dynamicLiveplot.active"
+        },
+        {
+          "command": "dynamicLiveplot.togglePause",
+          "when": "dynamicLiveplot.active"
+        },
+        {
+          "command": "dynamicLiveplot.changeChartType",
+          "when": "dynamicLiveplot.active"
+        },
+        {
+          "command": "dynamicLiveplot.autoPlot",
+          "when": "dynamicLiveplot.active"
+        },
+        {
+          "command": "dynamicLiveplot.toggleColumns",
+          "when": "dynamicLiveplot.active"
+        }
+      ]
+    }
+  },
   "scripts": {
+    "vscode:prepublish": "npm run typecheck && node esbuild.mjs --production",
     "compile": "npm run typecheck && node esbuild.mjs",
-    "typecheck": "tsc -p .",
+    "typecheck": "tsc -p . && tsc -p webview",
     "watch": "node esbuild.mjs --watch",
-    "lint": "eslint src"
+    "lint": "eslint src webview"
   },
   "devDependencies": {
     "@types/node": "20.x",
     "@types/vscode": "^1.90.0",
+    "echarts": "^6.1.0",
     "esbuild": "^0.28.2",
     "eslint": "^9.25.1",
     "typescript": "^6.0.3",

@@ -1,7 +1,7 @@
 import typescriptEslint from "typescript-eslint";
 
 export default [{
-    files: ["src/**/*.ts"],
+    files: ["src/**/*.ts", "webview/**/*.ts"],
 }, {
     plugins: {
         "@typescript-eslint": typescriptEslint.plugin,

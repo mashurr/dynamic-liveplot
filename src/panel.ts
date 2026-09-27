@@ -1,0 +1,162 @@
+// One Dynamic Liveplot view: a webview showing a file (custom editor) or the newest file in a folder.
+
+import * as path from 'node:path';
+import * as vscode from 'vscode';
+import type { DataClient } from './dataClient';
+import type { FromWorker, SourceSpec } from './data/protocol';
+import type { Layouts } from './layouts';
+import type { HostToView, Layout, ViewToHost } from './view/protocol';
+
+export interface PanelState {
+    state: 'live' | 'paused' | 'finished' | 'static' | 'reading' | 'waiting';
+    text: string;
+    alerts: number;
+}
+
+export class Panel {
+    static readonly all = new Set<Panel>();
+    static active: Panel | undefined;
+    static onChange: () => void = () => {};
+
+    private sourceId: number;
+    private readyCount = 0;
+    private queue: HostToView[] = [];
+    private disposed = false;
+    private file = '';
+    private tokens = 0;
+    viewState: PanelState = { state: 'waiting', text: 'Waiting for data', alerts: 0 };
+
+    constructor(
+        readonly webviewPanel: vscode.WebviewPanel,
+        readonly spec: SourceSpec,
+        private readonly ctx: vscode.ExtensionContext,
+        private readonly data: DataClient,
+        private readonly layouts: Layouts,
+    ) {
+        Panel.all.add(this);
+        const wv = webviewPanel.webview;
+        wv.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(ctx.extensionUri, 'out'), vscode.Uri.joinPath(ctx.extensionUri, 'media')] };
+        wv.html = this.html();
+        wv.onDidReceiveMessage((m: ViewToHost) => this.fromView(m));
+        webviewPanel.onDidChangeViewState(() => this.focusChanged());
+        webviewPanel.onDidDispose(() => this.dispose());
+        if (spec.kind === 'folder') { webviewPanel.title = `${path.basename(spec.path)}/`; }
+        webviewPanel.iconPath = vscode.Uri.joinPath(ctx.extensionUri, 'media', 'tab.svg');
+        this.sourceId = data.open(spec, m => this.fromWorker(m));
+        this.focusChanged();
+    }
+
+    get currentFile(): string { return this.file || (this.spec.kind === 'file' ? this.spec.path : ''); }
+
+    post(m: HostToView) {
+        if (this.disposed) { return; }
+        if (this.readyCount === 0) { this.queue.push(m); return; }
+        void this.webviewPanel.webview.postMessage(m);
+    }
+
+    command(name: string, arg?: unknown) { this.post({ type: 'command', name, arg }); }
+
+    private fromWorker(m: FromWorker) {
+        if (m.type === 'schema') { this.file = m.file; }
+        if (m.type === 'renamed') { this.file = m.to; }
+        this.post(m as HostToView);
+    }
+
+    private async fromView(m: ViewToHost) {
+        switch (m.type) {
+            case 'ready': {
+                const first = this.readyCount === 0;
+                this.readyCount++;
+                const saved = this.layouts.load(this.spec);
+                void this.webviewPanel.webview.postMessage({
+                    type: 'init', mode: this.spec.kind, path: this.spec.path, name: path.basename(this.spec.path),
+                    layout: saved?.layout ?? null, origin: saved?.origin ?? 'none', originName: saved?.name,
+                    glUri: this.uri('out', 'gl.js'), mapUri: this.uri('out', 'world.json'),
+                } satisfies HostToView);
+                if (first) {
+                    for (const q of this.queue) { void this.webviewPanel.webview.postMessage(q); }
+                    this.queue = [];
+                } else {
+                    this.data.resend(this.sourceId);
+                }
+                break;
+            }
+            case 'layout':
+                await this.layouts.save(this.spec, m.layout);
+                break;
+            case 'state':
+                this.viewState = { state: m.state, text: m.text, alerts: m.alerts };
+                Panel.onChange();
+                break;
+            case 'ask': {
+                const show = m.level === 'error' ? vscode.window.showErrorMessage : m.level === 'warning' ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
+                const choice = await show(m.message, ...m.actions);
+                this.post({ type: 'answer', token: m.token, choice: choice ?? null });
+                break;
+            }
+            case 'run':
+                await vscode.commands.executeCommand(m.command, this, m.arg);
+                break;
+            case 'save': {
+                const dir = path.dirname(this.currentFile || this.spec.path);
+                const target = await vscode.window.showSaveDialog({ defaultUri: vscode.Uri.file(path.join(dir, m.name)), filters: { [m.filter]: [path.extname(m.name).slice(1)] } });
+                if (!target) { return; }
+                await vscode.workspace.fs.writeFile(target, Buffer.from(m.data, m.encoding));
+                void vscode.window.showInformationMessage(`Saved ${path.basename(target.fsPath)}.`);
+                break;
+            }
+        }
+    }
+
+    /** Ask the view a question and get the chosen action back (used by commands). */
+    nextToken() { return ++this.tokens; }
+
+    applyLayout(layout: Layout, origin: 'named' | 'team', originName?: string) { this.post({ type: 'layout', layout, origin, originName }); }
+
+    private focusChanged() {
+        if (this.webviewPanel.active) { Panel.active = this; } else if (Panel.active === this) { Panel.active = undefined; }
+        void vscode.commands.executeCommand('setContext', 'dynamicLiveplot.active', !!Panel.active);
+        Panel.onChange();
+    }
+
+    private uri(...parts: string[]): string {
+        return this.webviewPanel.webview.asWebviewUri(vscode.Uri.joinPath(this.ctx.extensionUri, ...parts)).toString();
+    }
+
+    private html(): string {
+        const wv = this.webviewPanel.webview;
+        const nonce = Array.from({ length: 32 }, () => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 62)]).join('');
+        const csp = [
+            `default-src 'none'`,
+            `img-src ${wv.cspSource} data: blob:`,
+            `style-src ${wv.cspSource} 'unsafe-inline'`,
+            `font-src ${wv.cspSource}`,
+            `script-src 'nonce-${nonce}' ${wv.cspSource}`,
+            `connect-src ${wv.cspSource}`,
+        ].join('; ');
+        return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="${csp}">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link href="${this.uri('media', 'viewer.css')}" rel="stylesheet">
+<title>Dynamic Liveplot</title>
+</head>
+<body>
+<div id="app"></div>
+<script nonce="${nonce}" src="${this.uri('out', 'webview.js')}"></script>
+</body>
+</html>`;
+    }
+
+    dispose() {
+        if (this.disposed) { return; }
+        this.disposed = true;
+        this.data.close(this.sourceId);
+        Panel.all.delete(this);
+        if (Panel.active === this) { Panel.active = undefined; }
+        void vscode.commands.executeCommand('setContext', 'dynamicLiveplot.active', !!Panel.active);
+        Panel.onChange();
+    }
+}
