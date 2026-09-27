@@ -135,13 +135,15 @@ function checkAlerts(ref: CardRef) {
     if (hit && !S.alerts[p.id]) {
         void ask(`${hit.name} is ${fmt(hit.value)}, ${hit.alert} the ${fmt(hit.limit)} limit on "${p.title}".`, ['Show Plot'], 'warning').then(c => { if (c) { document.dispatchEvent(new CustomEvent('lp-select', { detail: p.id })); } });
     }
-    setAlert(p, !!hit);
+    if (setAlert(p, !!hit)) { renderChips(ref); }
 }
 
-export function setAlert(p: Plot, on: boolean) {
-    if (!!S.alerts[p.id] === on) { return; }
+/** Returns true when the plot's alert state changed. */
+export function setAlert(p: Plot, on: boolean): boolean {
+    if (!!S.alerts[p.id] === on) { return false; }
     S.alerts[p.id] = on;
     document.dispatchEvent(new CustomEvent('lp-alert', { detail: p.id }));
+    return true;
 }
 
 export function alertCount() { return Object.values(S.alerts).filter(Boolean).length; }

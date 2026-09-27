@@ -94,5 +94,6 @@ export type ViewToHost =
     | { type: 'layout'; layout: Layout }
     | { type: 'state'; state: 'live' | 'paused' | 'finished' | 'static' | 'reading' | 'waiting'; text: string; alerts: number }
     | { type: 'ask'; token: number; message: string; actions: string[]; level?: 'info' | 'warning' | 'error' }
+    | { type: 'input'; token: number; prompt: string; value?: string }
     | { type: 'run'; command: string; arg?: unknown }
     | { type: 'save'; name: string; data: string; encoding: 'base64' | 'utf8'; filter: string };

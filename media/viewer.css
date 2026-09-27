@@ -255,3 +255,6 @@ svg.gl .m { stroke: var(--muted); }
   .lp-cols:not(.collapsed) { position: absolute; left: 0; top: 0; bottom: 0; z-index: 19; background: var(--vscode-sideBar-background, var(--bg)); box-shadow: var(--shadow); }
   .lp-cols.collapsed + .lp-gridwrap, .lp-gridwrap { min-width: 0; }
 }
+.grp-h .grow { flex: 1; }
+.grp-n { cursor: text; }
+.lp-grid[hidden] { display: none; }

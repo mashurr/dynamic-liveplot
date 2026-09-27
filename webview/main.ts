@@ -6,6 +6,7 @@ import { afterAdd, extensions, groupSections } from './hooks';
 import './options';
 import './gallery';
 import './analysis';
+import './groups';
 import { answered, ask, notify, run } from './host';
 import { renderInspector, KIND_GLYPH, KIND_NAME, type InspectorHooks } from './inspector';
 import { gridPicker, showMenu } from './menus';

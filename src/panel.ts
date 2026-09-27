@@ -37,6 +37,7 @@ export class Panel {
     private file = '';
     private tokens = 0;
     private compareId: number | null = null;
+    lastLayout: Layout | null = null;
     viewState: PanelState = { state: 'waiting', text: 'Waiting for data', alerts: 0 };
 
     constructor(
@@ -99,6 +100,7 @@ export class Panel {
                 break;
             }
             case 'layout':
+                this.lastLayout = m.layout;
                 await this.layouts.save(this.spec, m.layout);
                 break;
             case 'compare':
@@ -123,6 +125,11 @@ export class Panel {
                 const show = m.level === 'error' ? vscode.window.showErrorMessage : m.level === 'warning' ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
                 const choice = await show(m.message, ...m.actions);
                 this.post({ type: 'answer', token: m.token, choice: choice ?? null });
+                break;
+            }
+            case 'input': {
+                const v = await vscode.window.showInputBox({ prompt: m.prompt, value: m.value });
+                this.post({ type: 'answer', token: m.token, choice: v?.trim() ? v.trim() : null });
                 break;
             }
             case 'run':
@@ -159,6 +166,43 @@ export class Panel {
         const f = file;
         this.post({ type: 'compare', file: f });
         this.compareId = this.data.open({ kind: 'file', path: f }, m => this.post({ type: 'compare', file: f, data: m }));
+    }
+
+    async saveLayoutAs() {
+        if (!this.lastLayout) { void vscode.window.showInformationMessage('Nothing to save yet.'); return; }
+        const name = await vscode.window.showInputBox({ prompt: 'Name this layout', placeHolder: 'bench default', value: path.basename(this.spec.path).replace(/\.[^.]+$/, ''), validateInput: v => (v.trim() ? null : 'Type a name') });
+        if (!name) { return; }
+        const file = vscode.Uri.file(path.join(this.layouts.namedDir(this.spec), `${name.trim().replace(/[\\/:*?"<>|]+/g, '-')}.liveplot.json`));
+        await this.layouts.write(file, this.lastLayout);
+        const open = await vscode.window.showInformationMessage(`Saved layout "${name.trim()}" to ${vscode.workspace.asRelativePath(file)}.`, 'Open File');
+        if (open) { await vscode.window.showTextDocument(file); }
+    }
+
+    async saveFolderLayout() {
+        if (!this.lastLayout) { void vscode.window.showInformationMessage('Nothing to save yet.'); return; }
+        const folder = this.layouts.folderOf(this.spec), file = vscode.Uri.file(path.join(folder, '.liveplot.json'));
+        let exists = false;
+        try { await vscode.workspace.fs.stat(file); exists = true; } catch { /* new */ }
+        if (exists) {
+            const ok = await vscode.window.showWarningMessage(`Replace the folder layout in ${path.basename(folder)}/?`, { modal: true }, 'Replace');
+            if (ok !== 'Replace') { return; }
+        }
+        await this.layouts.write(file, this.lastLayout);
+        void vscode.window.showInformationMessage(`Saved ${path.basename(folder)}/.liveplot.json. Anyone who opens files in this folder without a layout of their own gets it; commit it to share.`);
+    }
+
+    async loadLayout(uri?: vscode.Uri) {
+        if (!uri) {
+            const files = await this.layouts.list();
+            if (!files.length) { void vscode.window.showInformationMessage('No saved layouts yet. Use Save Layout As… to make one.'); return; }
+            const pick = await vscode.window.showQuickPick(files.map(f => ({ label: path.basename(f.fsPath).replace(/\.liveplot\.json$/, '') || path.basename(f.fsPath), description: vscode.workspace.asRelativePath(path.dirname(f.fsPath)), uri: f })), { placeHolder: 'Pick a layout to apply' });
+            uri = pick?.uri;
+        }
+        if (!uri) { return; }
+        try {
+            const layout = await this.layouts.read(uri);
+            this.applyLayout(layout, path.basename(uri.fsPath) === '.liveplot.json' ? 'team' : 'named', path.basename(uri.fsPath).replace(/\.liveplot\.json$/, ''));
+        } catch (e) { void vscode.window.showErrorMessage((e as Error).message); }
     }
 
     /** Ask the view a question and get the chosen action back (used by commands). */
