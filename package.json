@@ -86,17 +86,17 @@
       },
       {
         "command": "dynamicLiveplot.changeChartType",
-        "title": "Change Chart Type\u2026",
+        "title": "Change Chart Type…",
         "category": "Dynamic Liveplot"
       },
       {
         "command": "dynamicLiveplot.editBindings",
-        "title": "Edit Bindings\u2026",
+        "title": "Edit Bindings…",
         "category": "Dynamic Liveplot"
       },
       {
         "command": "dynamicLiveplot.export",
-        "title": "Export\u2026",
+        "title": "Export…",
         "category": "Dynamic Liveplot"
       },
       {
@@ -126,7 +126,7 @@
       },
       {
         "command": "dynamicLiveplot.switchFile",
-        "title": "Open Another Data File\u2026",
+        "title": "Open Another Data File…",
         "category": "Dynamic Liveplot"
       },
       {
@@ -226,9 +226,12 @@
     "@types/node": "20.x",
     "@types/vscode": "^1.90.0",
     "echarts": "^6.1.0",
+    "echarts-gl": "^2.1.0",
     "esbuild": "^0.28.2",
     "eslint": "^9.25.1",
+    "topojson-client": "^3.1.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.70.0"
+    "typescript-eslint": "^8.70.0",
+    "world-atlas": "^2.0.2"
   }
 }

@@ -4,6 +4,7 @@
 import * as echarts from 'echarts';
 import { TYPES } from './charts/registry';
 import { makeCtx, theme, type Built } from './charts/ctx';
+import { Pending } from './charts/other';
 import { ask } from './host';
 import { missingSlots, plotCols, colInfo, S, send, type Plot } from './state';
 import { $$, esc, fmt, ic } from './util';
@@ -39,7 +40,14 @@ export const themeKey = () => document.body.className;
 const linkGroup = (p: Plot) => (S.linkZoom ? `x:${(p.slots.x ?? [])[0] ?? '#row'}` : '');
 
 export function disposeChart(ref: CardRef) {
-    if (ref.chart) { ref.chart.dispose(); ref.chart = null; ref.struct = undefined; }
+    if (!ref.chart) { return; }
+    // zrender spreads a heavy paint over several frames; dispose() doesn't cancel the rest, and the
+    // next frame then reads the cleared painter. A new redraw id makes the pending frames stop.
+    const painter = (ref.chart.getZr() as unknown as { painter?: { _redrawId?: number } }).painter;
+    if (painter && typeof painter._redrawId === 'number') { painter._redrawId = -1; }
+    ref.chart.dispose();
+    ref.chart = null;
+    ref.struct = undefined;
 }
 
 export function renderChart(ref: CardRef, force = false) {
@@ -60,7 +68,7 @@ export function renderChart(ref: CardRef, force = false) {
     }
     if (T.gl && glState !== 'ready') { loadGL(); showHint(glState === 'error' ? 'The 3D engine could not load.' : 'Loading the 3D engine…', glState === 'error'); ref.sigBase = undefined; return; }
     let out: Built;
-    try { out = T.build(makeCtx(p, theme())); } catch (e) { showHint(esc((e as Error).message), true); return; }
+    try { out = T.build(makeCtx(p, theme())); } catch (e) { showHint(esc((e as Error).message), !(e instanceof Pending)); if (e instanceof Pending) { ref.sigBase = undefined; } return; }
     if (!ref.chart) {
         if (!ref.host.clientWidth || !ref.host.clientHeight) { ref.ver = undefined; return; }
         ref.chart = echarts.init(ref.host, null, { renderer: 'canvas' });
@@ -83,7 +91,8 @@ export function renderChart(ref: CardRef, force = false) {
         } else {
             const o = { ...out.option };
             delete o.dataZoom;
-            ref.chart.setOption(o, { replaceMerge: ['series'], lazyUpdate: true });
+            // Applied right away: a deferred update can land after the chart is disposed and throw
+            ref.chart.setOption(o, { replaceMerge: ['series'] });
         }
     } catch (e) {
         const m = (e as Error).message;
