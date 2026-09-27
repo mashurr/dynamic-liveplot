@@ -7,7 +7,10 @@ import { AGGS, RAMP, pal, uniqOrdered } from '../util';
 
 function glBase(ctx: Ctx, names: string[]): Opt {
     const V = ctx.V, a = (name: string) => ({ type: 'value', name, nameTextStyle: { color: V.muted, fontSize: 10 }, axisLine: { lineStyle: { color: V.axis } }, axisLabel: { color: V.axis, fontSize: 9, textStyle: { color: V.axis, fontSize: 9 } }, splitLine: { lineStyle: { color: V.grid } } });
-    return { xAxis3D: a(names[0]), yAxis3D: a(names[1]), zAxis3D: a(names[2]), grid3D: { boxWidth: 110, boxDepth: 80, viewControl: { alpha: 24, beta: 38, distance: 260 }, axisPointer: { lineStyle: { color: V.axis } }, light: { main: { intensity: 1.1 }, ambient: { intensity: 0.35 } } } };
+    return { xAxis3D: a(names[0]), yAxis3D: a(names[1]), zAxis3D: a(names[2]), grid3D: { boxWidth: 110, boxDepth: 80, viewControl: { alpha: 24, beta: 38, distance: 260 },
+        // Anti-aliasing by accumulating frames re-renders the scene for many frames after every change; with live
+        // data that never stops and slowed every chart in the view to about 2 fps
+        temporalSuperSampling: { enable: false }, postEffect: { enable: false }, axisPointer: { lineStyle: { color: V.axis } }, light: { main: { intensity: 1.1 }, ambient: { intensity: 0.35 } } } };
 }
 
 export function buildSurface(ctx: Ctx): Built {
