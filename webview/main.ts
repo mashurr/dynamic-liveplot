@@ -460,7 +460,8 @@ function quickAdd(col: string) {
 function layoutGrid() {
     if (!UI) { return; }
     const h = UI.wrap.clientHeight - 20 - 10 * (S.grid.rows - 1) - S.groups.length * 42;
-    const rowH = Math.max(190, Math.floor(h / S.grid.rows));
+    // Five or more rows is a request for a dense dashboard: let rows shrink further before scrolling
+    const rowH = Math.max(S.grid.rows > 4 ? 140 : 190, Math.floor(h / S.grid.rows));
     for (const g of $$('.lp-grid', UI.stack)) { g.style.gridTemplateColumns = `repeat(${S.grid.columns}, minmax(0, 1fr))`; g.style.gridAutoRows = rowH + 'px'; }
 }
 
