@@ -23,13 +23,15 @@ export interface CardRef {
     out?: Built;
 }
 
+// ECharts GL (loaded as a script) finds ECharts on window
+(window as unknown as { echarts: typeof echarts }).echarts = echarts;
+
 let glState: 'none' | 'loading' | 'ready' | 'error' = 'none';
 let onGlReady: () => void = () => {};
 export function setGlListener(f: () => void) { onGlReady = f; }
 function loadGL() {
     if (glState !== 'none') { return; }
     glState = 'loading';
-    (window as unknown as { echarts: typeof echarts }).echarts = echarts;
     const s = document.createElement('script');
     s.src = S.glUri;
     s.onload = () => { glState = 'ready'; onGlReady(); };

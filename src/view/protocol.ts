@@ -79,7 +79,7 @@ export interface InitMessage {
 
 export type HostToView =
     | InitMessage
-    | (FromWorker & { type: 'schema' | 'rows' | 'bindings' | 'status' | 'renamed' | 'error' | 'tables' })
+    | (FromWorker & { type: 'schema' | 'rows' | 'bindings' | 'status' | 'renamed' | 'error' | 'tables' | 'detail' })
     | { type: 'command'; name: string; arg?: unknown }
     | { type: 'layout'; layout: Layout; origin: LayoutOrigin; originName?: string }
     | { type: 'answer'; token: number; choice: string | null }
@@ -89,6 +89,8 @@ export type HostToView =
 export type ViewToHost =
     | { type: 'ready' }
     | { type: 'table'; name: string }
+    /** Read every row in [from, to) (the file's own row numbers), for detail inside an overview. */
+    | { type: 'range'; from: number; to: number }
     /** Compare against a file: 'previous' picks the newest older file in the same folder. */
     | { type: 'compare'; target: 'previous' | 'pick' | null }
     | { type: 'layout'; layout: Layout }

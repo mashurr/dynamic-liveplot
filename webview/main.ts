@@ -7,6 +7,7 @@ import './options';
 import './gallery';
 import './analysis';
 import './groups';
+import './bigfiles';
 import { answered, ask, notify, run } from './host';
 import { renderInspector, KIND_GLYPH, KIND_NAME, type InspectorHooks } from './inspector';
 import { gridPicker, showMenu } from './menus';
@@ -39,6 +40,7 @@ function onHost(m: HostToView) {
             renderShell();
             break;
         case 'schema': {
+            if (S.detail) { S.table = S.source; S.detail = null; }
             S.table.applySchema(m.file, m.format, m.columns);
             if (!S.started) {
                 // Auto-plot once the first rows arrive, so column shapes can be judged from data
@@ -54,7 +56,7 @@ function onHost(m: HostToView) {
             break;
         }
         case 'rows':
-            S.table.applyRows(m.first, m.count, m.dropped, m.columns);
+            S.source.applyRows(m.first, m.count, m.dropped, m.columns);
             if (pendingAuto) { runAutoPlot(); }
             dirty = true;
             break;
@@ -64,6 +66,7 @@ function onHost(m: HostToView) {
             break;
         case 'status':
             S.status = m;
+            if (m.stride !== S.stride || m.fileRows !== S.fileRows) { S.stride = m.stride; S.fileRows = m.fileRows; document.dispatchEvent(new CustomEvent('lp-stride')); }
             if (pendingAuto && m.state === 'tailing' && m.rows === 0) { runAutoPlot(); }
             updateLive();
             break;
@@ -96,6 +99,9 @@ function onHost(m: HostToView) {
         case 'compare':
             document.dispatchEvent(new CustomEvent('lp-compare', { detail: m }));
             break;
+        case 'detail':
+            document.dispatchEvent(new CustomEvent('lp-detail', { detail: m }));
+            break;
     }
 }
 
@@ -113,7 +119,7 @@ function runAutoPlot() {
 
 function runCommand(name: string) {
     if (name === 'reinit') {
-        S.table = new Table(); S.tables = []; S.tableName = null; S.plots = []; S.started = false; S.sel = null; S.status = null; S.banner = null;
+        S.table = S.source = new Table(); S.stride = 1; S.fileRows = 0; S.detail = null; S.tables = []; S.tableName = null; S.plots = []; S.started = false; S.sel = null; S.status = null; S.banner = null;
         pendingAuto = false;
         send({ type: 'ready' });
         return;
@@ -210,10 +216,12 @@ function renderToolbar() {
 
 interface Live { state: 'live' | 'paused' | 'finished' | 'static' | 'reading' | 'waiting'; cls: string; text: string }
 function liveState(): Live {
-    const st = S.status, rows = S.table.rows;
+    const st = S.status, rows = S.source.rows;
+    if (S.detail) { return { state: 'static', cls: 'static', text: `Detail · rows ${fmtInt(S.detail.from + 1)}–${fmtInt(S.detail.from + S.table.length)}` }; }
     if (!st || st.state === 'waiting') { return { state: 'waiting', cls: 'waiting', text: S.mode === 'folder' ? 'Waiting for a data file' : 'Waiting for the file' }; }
     if (st.state === 'missing') { return { state: 'finished', cls: 'done', text: `File removed · ${fmtInt(rows)} rows` }; }
-    if (st.state === 'reading' && !st.lastGrowth) { return { state: 'reading', cls: 'reading', text: `Reading ${st.size ? Math.min(99, Math.round(st.bytesRead / st.size * 100)) : 0}% · ${fmtInt(rows)} rows` }; }
+    if (st.state === 'reading' && !st.lastGrowth) { return { state: 'reading', cls: 'reading', text: `Reading ${st.size ? Math.min(99, Math.round(st.bytesRead / st.size * 100)) : 0}% · ${fmtInt(S.stride > 1 ? S.fileRows : rows)} rows` }; }
+    if (S.stride > 1 && !st.lastGrowth) { return { state: 'static', cls: 'static', text: `Overview · ${fmtInt(S.fileRows)} rows, 1 in ${fmtInt(S.stride)} shown` }; }
     const growing = st.lastGrowth > 0 && Date.now() - st.lastGrowth < 15000;
     if (growing) { return S.paused ? { state: 'paused', cls: 'paused', text: `Paused · ${fmtInt(Math.max(0, rows - S.pausedRows))} new rows waiting` } : { state: 'live', cls: 'live', text: `Live · ${fmtInt(rows)} rows` }; }
     if (st.lastGrowth) { return { state: 'finished', cls: 'done', text: `Finished · ${fmtInt(rows)} rows` }; }
@@ -237,7 +245,7 @@ function togglePause() {
     const live = liveState();
     if (live.state !== 'live' && live.state !== 'paused') { return; }
     S.paused = !S.paused;
-    if (S.paused) { S.pausedRows = S.table.rows; }
+    if (S.paused) { S.pausedRows = S.source.rows; }
     updateLive();
     dirty = true;
 }
@@ -511,6 +519,8 @@ document.addEventListener('lp-structure', () => changed(true));
 document.addEventListener('lp-dirty', () => { dirty = true; });
 document.addEventListener('lp-columns', () => { renderColumns(); renderInspectorNow(); });
 document.addEventListener('lp-toolbar', () => renderToolbar());
+document.addEventListener('lp-banner', () => renderBanner());
+document.addEventListener('lp-live', () => updateLive());
 document.addEventListener('lp-redraw', e => { const r = UI?.cards.get((e as CustomEvent<number>).detail); if (r) { renderChart(r, true); } });
 document.addEventListener('lp-retitle', e => { const p = S.plots.find(x => x.id === (e as CustomEvent<number>).detail); if (p?.autoTitle) { p.title = autoTitle(p); } });
 document.addEventListener('lp-alert', e => {

@@ -1,7 +1,7 @@
 // What a chart builder gets (columns sliced to the rows on show) and shared ECharts option helpers.
 
 import type { Kind } from '../../src/data/protocol';
-import { colInfo, dn, rowRange, S, type Plot } from '../state';
+import { colInfo, dn, rowRange, rowStep, S, type Plot } from '../state';
 import { fmt, hexA, isDark, lastFinite, pal, palette } from '../util';
 
 // ECharts options are large nested objects; builders assemble them freely
@@ -101,8 +101,9 @@ export function makeCtx(p: Plot, V: Theme): Ctx {
     if (ctx.xc) {
         ctx.x = ctx.timeX ? Array.from(t.numbers(ctx.xc, a, b), v => (Number.isFinite(v) ? v * 1000 : null)) : ctx.num(ctx.xc);
     } else {
-        const first = t.start + a + 1;
-        ctx.x = Array.from({ length: b - a }, (_, i) => first + i);
+        // Row numbers in the file, also when only one row in `step` is kept
+        const first = t.start + a, step = rowStep();
+        ctx.x = Array.from({ length: b - a }, (_, i) => (first + i) * step + 1);
     }
     ctx.xName = ctx.xc ? dn(ctx.xc) : 'row';
     ctx.cmp = compareCtx(ctx);

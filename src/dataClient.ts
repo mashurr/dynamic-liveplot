@@ -30,6 +30,8 @@ export class DataClient {
 
     resend(id: number) { this.send({ type: 'resend', id }); }
 
+    range(id: number, from: number, to: number) { this.send({ type: 'range', id, from, to }); }
+
     close(id: number) {
         this.listeners.delete(id);
         if (this.worker) { this.send({ type: 'close', id }); }

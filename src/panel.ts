@@ -106,6 +106,9 @@ export class Panel {
             case 'compare':
                 await this.compare(m.target);
                 break;
+            case 'range':
+                this.data.range(this.sourceId, m.from, m.to);
+                break;
             case 'table':
                 if (this.spec.kind !== 'file' || this.spec.table === m.name) { break; }
                 this.data.close(this.sourceId);

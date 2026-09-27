@@ -25,7 +25,14 @@ export const S = {
     name: '',
     glUri: '',
     mapUri: '',
+    /** The table the plots show: the worker's source, or a detail range read from it. */
     table: new Table(),
+    /** The worker's table (an overview when `stride` > 1). */
+    source: null as unknown as Table,
+    /** Rows of the file per row kept (1 unless the file is bigger than the row budget). */
+    stride: 1,
+    fileRows: 0,
+    detail: null as null | { from: number; to: number },
     fileBindings: {} as Record<string, string>,
     bindings: {} as Record<string, string>,
     grid: { columns: 3, rows: 2 },
@@ -36,7 +43,7 @@ export const S = {
     sel: null as number | null,
     paused: false,
     pausedRows: 0,
-    status: null as null | { state: string; bytesRead: number; size: number; rows: number; lastGrowth: number; badLines: number; file: string },
+    status: null as null | { state: string; bytesRead: number; size: number; rows: number; lastGrowth: number; badLines: number; file: string; stride: number; fileRows: number },
     banner: null as Banner | null,
     search: '',
     started: false,
@@ -48,6 +55,11 @@ export const S = {
     compareMode: null as 'previous' | 'pick' | null,
     pendingCalc: [] as { name: string; formula: string }[],
 };
+
+S.source = S.table;
+
+/** File rows per table row for the table on screen. */
+export const rowStep = () => (S.table === S.source ? S.stride : 1);
 
 let nextId = 1;
 export const uid = () => nextId++;
