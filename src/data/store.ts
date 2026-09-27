@@ -151,7 +151,11 @@ export class Store {
                 return d;
             }
             const items = c.since(first);
-            return { name: c.name, kind: 'array', arrays: items.map(i => i.values), arrayRows: items.map(i => i.row) };
+            const lengths = Int32Array.from(items, i => i.values.length);
+            const packed = new Float64Array(lengths.reduce((s, n) => s + n, 0));
+            let at = 0;
+            for (const i of items) { packed.set(i.values, at); at += i.values.length; }
+            return { name: c.name, kind: 'array', packed, lengths, arrayRows: Float64Array.from(items, i => i.row) };
         });
         return { first, count: Math.max(0, to - first), columns };
     }

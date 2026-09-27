@@ -15,6 +15,8 @@ port.on('message', (m: ToWorker) => {
         const s = new Source(m.id, m.spec, m.options ?? {}, post);
         sources.set(m.id, s);
         s.start();
+    } else if (m.type === 'resend') {
+        sources.get(m.id)?.resend();
     } else if (m.type === 'close') {
         sources.get(m.id)?.close();
         sources.delete(m.id);

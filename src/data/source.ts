@@ -79,6 +79,13 @@ export class Source {
         }
     }
 
+    resend() {
+        if (!this.ready) { return; }
+        this.store.resend();
+        this.postSchema(this.reason);
+        this.postStatus();
+    }
+
     close() {
         this.closed = true;
         this.folder?.stop();
@@ -357,6 +364,7 @@ export class Source {
         for (const c of d.columns) {
             if (c.values) { transfer.push(c.values.buffer as ArrayBuffer); }
             if (c.codes) { transfer.push(c.codes.buffer as ArrayBuffer); }
+            if (c.packed) { transfer.push(c.packed.buffer as ArrayBuffer, c.lengths!.buffer as ArrayBuffer, c.arrayRows!.buffer as ArrayBuffer); }
         }
         this.post({ type: 'rows', id: this.id, first: d.first, count: d.count, dropped: s.offset, columns: d.columns }, transfer);
     }

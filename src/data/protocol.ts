@@ -21,7 +21,9 @@ export interface OpenOptions {
 
 export type ToWorker =
     | { type: 'open'; id: number; spec: SourceSpec; options?: OpenOptions }
-    | { type: 'close'; id: number };
+    | { type: 'close'; id: number }
+    /** Send the schema and every kept row again (a webview reloaded). */
+    | { type: 'resend'; id: number };
 
 /** New values for one column. Rows are absolute: row 0 is the first data row of the file. */
 export interface ColumnDelta {
@@ -34,10 +36,12 @@ export interface ColumnDelta {
     /** Dictionary entries added since the last delta, starting at index `dictStart`. */
     dictStart?: number;
     dict?: string[];
-    /** array columns: the arrays in this delta (only the newest ones are kept, see `arrayRows`). */
-    arrays?: Float64Array[];
-    /** The absolute row of each entry in `arrays`. */
-    arrayRows?: number[];
+    /** array columns: every array in this delta packed end to end (only the newest are kept). */
+    packed?: Float64Array;
+    /** Length of each packed array, in order. */
+    lengths?: Int32Array;
+    /** The absolute row of each packed array. */
+    arrayRows?: Float64Array;
 }
 
 export type SchemaReason = 'opened' | 'switched' | 'replaced' | 'truncated' | 'columns';
