@@ -27,6 +27,14 @@ export function classifyText(name: string): TextUse {
     return 'ignore';
 }
 
+/** A number column that is really a code: a handful of whole numbers (error codes, levels, bins). */
+export function codeLike(name: string): boolean {
+    const t = S.table, a = t.numbers(name, 0, t.length), seen = new Set<number>();
+    let n = 0;
+    for (const x of a) { if (!Number.isFinite(x)) { continue; } if (!Number.isInteger(x)) { return false; } seen.add(x); n++; if (seen.size > 12) { return false; } }
+    return n >= 10 && seen.size <= 12 && seen.size < n / 3;
+}
+
 function autoLog(p: Plot, c: string) {
     const t = S.table, a = t.numbers(c, 0, t.length);
     let lo = Infinity, hi = -Infinity, pos = true, any = false;
@@ -45,7 +53,8 @@ export function autoPlot(): { count: number; how: string } {
     const texts = all.filter(c => c.kind === 'text').map(c => ({ name: c.name, use: classifyText(c.name) }));
     const label = texts.find(t => t.use === 'label'), split = texts.find(t => t.use === 'split'), shade = texts.find(t => t.use === 'shade');
     const counts = texts.filter(t => t.use === 'count'), used = texts.filter(t => t.use !== 'ignore');
-    const ys = nums.filter(c => c !== x && !(time && monotonic(c)));
+    const codes = nums.filter(c => c !== x && codeLike(c));
+    const ys = nums.filter(c => c !== x && !(time && monotonic(c)) && !codes.includes(c));
     const arrays = all.filter(c => c.kind === 'array').map(c => c.name);
     const named = (w: string) => nums.find(c => c.toLowerCase() === w);
     const X = x ? [x] : [];
@@ -67,6 +76,13 @@ export function autoPlot(): { count: number; how: string } {
         if (vals.length >= 3) { plots.push(newPlot('All columns', 'parallel', { y: vals.slice(0, 6) })); }
         if (!vals.length) { plots.push(newPlot(dn(label.name), 'bar', { cat: [label.name] })); }
         how = `Each row is one ${dn(label.name)}, so numbers show per ${dn(label.name)}.`;
+    } else if (!ys.length && (used.length || codes.length)) {
+        // Nothing to measure (a log of events, say): count each text column and code
+        for (const c of [...used.map(t => t.name), ...codes].slice(0, 6)) {
+            const k = S.table.col(c)?.kind === 'text' ? S.table.categories(c).length : new Set(S.table.numbers(c, 0, S.table.length)).size;
+            plots.push(newPlot(`${dn(c)} counts`, k <= 6 && has('donut') ? 'donut' : 'bar', { cat: [c] }));
+        }
+        how = 'No measurements here, so each column shows as counts.';
     } else {
         const room = 6 - (arrays.length && has('spectrum') ? 1 : 0) - (counts.length ? 1 : 0) - (split && ys.length ? 1 : 0);
         ys.slice(0, Math.max(1, room)).forEach(c => {

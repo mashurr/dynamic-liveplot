@@ -17,7 +17,7 @@ function totals(ctx: Ctx) {
 export function buildPie(ctx: Ctx, kind: 'pie' | 'donut' | 'rose'): Built {
     const V = ctx.V, { items, what } = totals(ctx);
     return {
-        option: base(ctx, { tooltip: tip(V, 'item', { formatter: (p: Opt) => `${esc(p.name)}: <b>${fmt(p.value)}</b> (${p.percent}%)` }), series: [{ type: 'pie', id: 'pie', radius: kind === 'donut' ? ['42%', '68%'] : kind === 'rose' ? ['12%', '70%'] : ['0%', '68%'], roseType: kind === 'rose' ? 'area' : undefined, center: ['50%', '54%'], data: items, label: { color: V.fg, fontSize: 11, formatter: '{b}\n{d}%' }, labelLine: { lineStyle: { color: V.border } }, itemStyle: { borderColor: V.bg, borderWidth: 2 } }] }),
+        option: base(ctx, { tooltip: tip(V, 'item', { formatter: (p: Opt) => `${esc(p.name)}: <b>${fmt(p.value)}</b> (${p.percent}%)` }), series: [{ type: 'pie', id: 'pie', radius: kind === 'donut' ? ['36%', '58%'] : kind === 'rose' ? ['10%', '60%'] : ['0%', '58%'], roseType: kind === 'rose' ? 'area' : undefined, center: ['50%', '54%'], data: items, label: { color: V.fg, fontSize: 11, formatter: '{b}\n{d}%' }, labelLine: { lineStyle: { color: V.border } }, itemStyle: { borderColor: V.bg, borderWidth: 2 } }] }),
         summary: `${items.length} slices · ${what}`,
     };
 }

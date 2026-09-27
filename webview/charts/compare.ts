@@ -47,7 +47,7 @@ export function buildBars(ctx: Ctx, variant: 'bar' | 'hbar' | 'stackedBar' | 'ba
     }
     const catA = catAx(V, labels, catName), valA = valAx(V, variant === 'bar100' ? '%' : '', { type: ctx.p.options.log ? 'log' : 'value', scale: false, max: variant === 'bar100' ? 100 : undefined, nameLocation: 'end', nameGap: 8 });
     const chips: Chip[] | null = sers.length > 1 ? sers.map(s => ({ name: s.name, color: s.color })) : null;
-    return { option: base(ctx, { tooltip: tip(V, 'axis', { axisPointer: { type: 'shadow' } }), xAxis: horiz ? valA : catA, yAxis: horiz ? { ...catA, inverse: true, nameLocation: 'end', nameGap: 8 } : valA, series }), chips, summary: what };
+    return { option: base(ctx, { tooltip: tip(V, 'axis', { axisPointer: { type: 'shadow' } }), xAxis: horiz ? valA : catA, yAxis: horiz ? { ...catA, inverse: true, nameLocation: 'start', nameGap: 8 } : valA, series }), chips, summary: what };
 }
 
 export function buildWaterfall(ctx: Ctx): Built {
