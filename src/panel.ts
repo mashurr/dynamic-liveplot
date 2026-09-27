@@ -1,11 +1,23 @@
 // One Dynamic Liveplot view: a webview showing a file (custom editor) or the newest file in a folder.
 
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { DataClient } from './dataClient';
 import type { FromWorker, SourceSpec } from './data/protocol';
 import type { Layouts } from './layouts';
 import type { HostToView, Layout, ViewToHost } from './view/protocol';
+
+/** The newest data file of the same kind in the same folder that is older than `file`. */
+export function previousFile(file: string): string | undefined {
+    const dir = path.dirname(file), ext = path.extname(file).toLowerCase();
+    let mine = Infinity;
+    try { mine = fs.statSync(file).mtimeMs; } catch { /* gone */ }
+    const others = fs.readdirSync(dir).filter(n => path.extname(n).toLowerCase() === ext).map(n => path.join(dir, n)).filter(p => p !== file)
+        .map(p => { try { return { p, t: fs.statSync(p).mtimeMs }; } catch { return null; } }).filter((x): x is { p: string; t: number } => !!x && x.t <= mine)
+        .sort((a, b) => b.t - a.t);
+    return others[0]?.p;
+}
 
 export interface PanelState {
     state: 'live' | 'paused' | 'finished' | 'static' | 'reading' | 'waiting';
@@ -24,6 +36,7 @@ export class Panel {
     private disposed = false;
     private file = '';
     private tokens = 0;
+    private compareId: number | null = null;
     viewState: PanelState = { state: 'waiting', text: 'Waiting for data', alerts: 0 };
 
     constructor(
@@ -88,6 +101,9 @@ export class Panel {
             case 'layout':
                 await this.layouts.save(this.spec, m.layout);
                 break;
+            case 'compare':
+                await this.compare(m.target);
+                break;
             case 'table':
                 if (this.spec.kind !== 'file' || this.spec.table === m.name) { break; }
                 this.data.close(this.sourceId);
@@ -121,6 +137,28 @@ export class Panel {
                 break;
             }
         }
+    }
+
+    private stopCompare() {
+        if (this.compareId !== null) { this.data.close(this.compareId); this.compareId = null; }
+    }
+
+    private async compare(target: 'previous' | 'pick' | null) {
+        this.stopCompare();
+        if (!target) { this.post({ type: 'compare', file: null }); return; }
+        const current = this.currentFile;
+        let file: string | undefined;
+        if (target === 'previous') {
+            file = previousFile(current);
+            if (!file) { void vscode.window.showInformationMessage(`There's no earlier data file next to ${path.basename(current)} to compare with.`); this.post({ type: 'compare', file: null }); return; }
+        } else {
+            const picked = await vscode.window.showOpenDialog({ canSelectMany: false, openLabel: 'Compare', defaultUri: vscode.Uri.file(path.dirname(current)), filters: { 'Data files': ['csv', 'tsv', 'txt', 'jsonl', 'ndjson', 'json', 'parquet'] } });
+            file = picked?.[0]?.fsPath;
+            if (!file) { this.post({ type: 'compare', file: null }); return; }
+        }
+        const f = file;
+        this.post({ type: 'compare', file: f });
+        this.compareId = this.data.open({ kind: 'file', path: f }, m => this.post({ type: 'compare', file: f, data: m }));
     }
 
     /** Ask the view a question and get the chosen action back (used by commands). */
@@ -169,6 +207,7 @@ export class Panel {
         if (this.disposed) { return; }
         this.disposed = true;
         this.data.close(this.sourceId);
+        this.stopCompare();
         Panel.all.delete(this);
         if (Panel.active === this) { Panel.active = undefined; }
         void vscode.commands.executeCommand('setContext', 'dynamicLiveplot.active', !!Panel.active);

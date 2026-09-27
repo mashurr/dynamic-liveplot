@@ -39,6 +39,15 @@ export function buildSpectrum(ctx: Ctx): Built {
         chips.push({ name: ctx.name(c), color, label: a.length ? `${ctx.name(c)} peak ${fmt(a[mi])} at ${mi}` : ctx.name(c) });
         latest.push({ name: ctx.name(c), value: a.length ? a[mi] : null, axis: 'left' });
     });
+    if (ctx.cmp) {
+        const cmp = ctx.cmp;
+        cs.forEach((c, i) => {
+            if (!cmp.has(c)) { return; }
+            const a = cmp.arr(c), color = ctx.color(c, i), name = `${ctx.name(c)} · ${cmp.name}`;
+            series.push({ type: 'line', id: `${c}|cmp`, name, data: Array.from(a, (v, j) => [j, Number.isFinite(v) ? v : null]), showSymbol: false, itemStyle: { color }, lineStyle: { color, width: 1.2, type: 'dashed', opacity: 0.6 }, z: 1 });
+            chips.push({ name, color, dashed: true });
+        });
+    }
     applyMarks(ctx, series);
     return { option: base(ctx, { xAxis: valAx(V, 'bin', { min: 0, max: 'dataMax', splitLine: { show: false } }), yAxis: [cartY(ctx, false)], series }), chips, latest };
 }

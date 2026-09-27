@@ -7,7 +7,10 @@ import { fmt, hexA, isDark, lastFinite, pal, palette } from '../util';
 // ECharts options are large nested objects; builders assemble them freely
 export type Opt = Record<string, any>;
 
-export interface Chip { name: string; label?: string; color: string; value?: number | null }
+export interface Chip { name: string; label?: string; color: string; value?: number | null; dashed?: boolean }
+
+/** The file being compared against, lined up with the current plot's X axis. */
+export interface Cmp { name: string; x: (number | null)[]; has(c: string): boolean; num(c: string): (number | null)[]; arr(c: string): Float64Array }
 export interface Built {
     option: Opt;
     chips?: Chip[] | null;
@@ -61,6 +64,7 @@ export interface Ctx {
     timeX: boolean;
     x: (number | null)[];
     xName: string;
+    cmp: Cmp | null;
 }
 
 export function makeCtx(p: Plot, V: Theme): Ctx {
@@ -89,7 +93,7 @@ export function makeCtx(p: Plot, V: Theme): Ctx {
             return items.length ? items[items.length - 1].values : new Float64Array(0);
         },
         hist: c => t.arrays(c, S.paused ? S.pausedRows : undefined).slice(-200),
-        xc: null, timeX: false, x: [], xName: 'row',
+        xc: null, timeX: false, x: [], xName: 'row', cmp: null,
     };
     const xc = ctx.one('x');
     ctx.xc = xc && (kind(xc) === 'num' || kind(xc) === 'time') ? xc : null;
@@ -101,7 +105,36 @@ export function makeCtx(p: Plot, V: Theme): Ctx {
         ctx.x = Array.from({ length: b - a }, (_, i) => first + i);
     }
     ctx.xName = ctx.xc ? dn(ctx.xc) : 'row';
+    ctx.cmp = compareCtx(ctx);
     return ctx;
+}
+
+function compareCtx(ctx: Ctx): Cmp | null {
+    const t2 = S.cmp, t = S.table;
+    if (!t2 || !t2.length || !S.cmpFile) { return null; }
+    const n2 = t2.length, skip = Math.max(0, (ctx.p.options.skip ?? 0) - t2.start);
+    let x: (number | null)[];
+    const fin = (v: number) => (Number.isFinite(v) ? v : null);
+    if (ctx.xc) {
+        if (!t2.col(ctx.xc)) { return null; }
+        const xs = t2.numbers(ctx.xc, skip, n2);
+        if (ctx.timeX) {
+            // Line runs up by elapsed time: shift the other file so both start together
+            const first = (a: Float64Array) => { for (const v of a) { if (Number.isFinite(v)) { return v; } } return NaN; };
+            const cur0 = first(t.numbers(ctx.xc, 0, Math.min(t.length, 50))), prev0 = first(t2.numbers(ctx.xc, 0, Math.min(n2, 50)));
+            x = Array.from(xs, v => fin((v - prev0 + cur0) * 1000));
+        } else {
+            x = Array.from(xs, fin);
+        }
+    } else {
+        x = Array.from({ length: n2 - skip }, (_, i) => t2.start + skip + i + 1);
+    }
+    return {
+        name: S.cmpFile.split(/[\\/]/).pop() ?? S.cmpFile, x,
+        has: c => !!t2.col(c),
+        num: c => Array.from(t2.numbers(c, skip, n2), fin),
+        arr: c => t2.arrays(c).at(-1)?.values ?? new Float64Array(0),
+    };
 }
 
 const hiddenMap = (p: Plot) => Object.fromEntries((p.hidden ?? []).map(n => [n, false]));

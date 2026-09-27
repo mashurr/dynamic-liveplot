@@ -43,6 +43,10 @@ export const S = {
     alerts: {} as Record<number, boolean>,
     tables: [] as { name: string; rows: number; columns: number }[],
     tableName: null as string | null,
+    cmp: null as Table | null,
+    cmpFile: null as string | null,
+    compareMode: null as 'previous' | 'pick' | null,
+    pendingCalc: [] as { name: string; formula: string }[],
 };
 
 let nextId = 1;
@@ -112,8 +116,9 @@ export function toLayout(): Layout {
         grid: { ...S.grid },
         bindings: Object.keys(S.bindings).length ? { ...S.bindings } : undefined,
         groups: S.groups.length ? clone(S.groups) : undefined,
+        calculated: S.table.columns.some(c => c.calc) ? S.table.columns.filter(c => c.calc).map(c => ({ name: c.name, formula: c.calc!.formula })) : S.pendingCalc.length ? clone(S.pendingCalc) : undefined,
         plots: S.plots.map(({ id: _id, hidden: _h, ...p }) => clone(p)),
-        view: { columnsHidden: S.columnsHidden, linkZoom: S.linkZoom },
+        view: { columnsHidden: S.columnsHidden, linkZoom: S.linkZoom, compare: S.compareMode === 'previous' ? 'previous' : undefined },
     };
 }
 
@@ -124,6 +129,8 @@ export function fromLayout(l: Layout) {
     S.plots = (l.plots ?? []).filter(p => TYPES[p.type]).map(p => ({ series: {}, options: {}, ...clone(p), id: uid() }));
     S.columnsHidden = !!l.view?.columnsHidden;
     S.linkZoom = l.view?.linkZoom ?? true;
+    S.pendingCalc = clone(l.calculated ?? []);
+    S.compareMode = l.view?.compare === 'previous' ? 'previous' : null;
     S.sel = null;
 }
 

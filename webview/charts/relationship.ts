@@ -32,6 +32,15 @@ export function buildScatter(ctx: Ctx, bubble: boolean): Built {
             latest.push({ name: ctx.name(c), value: lastFinite(Yv), axis: yi ? 'right' : 'left' });
         }
     });
+    if (ctx.cmp && !split) {
+        const cmp = ctx.cmp;
+        ys.forEach((c, i) => {
+            if (!cmp.has(c)) { return; }
+            const color = ctx.color(c, i), Y2 = cmp.num(c), name = `${ctx.name(c)} · ${cmp.name}`;
+            series.push({ type: 'scatter', id: `${c}|cmp`, name, data: cmp.x.map((xv, j) => [xv, Y2[j]]).slice(-5000), symbolSize: 5, itemStyle: { color: 'transparent', borderColor: color, borderWidth: 1, opacity: 0.7 }, yAxisIndex: ctx.style(c).axis === 'right' ? 1 : 0, z: 1 });
+            chips.push({ name, color, dashed: true });
+        });
+    }
     applyMarks(ctx, series);
     const fx = (v: number) => (ctx.timeX ? fmtTime(v / 1000) : fmt(v));
     return {

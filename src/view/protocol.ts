@@ -59,7 +59,7 @@ export interface Layout {
     calculated?: Calculated[];
     groups?: GroupSpec[];
     plots: PlotSpec[];
-    view?: { columnsHidden?: boolean; linkZoom?: boolean };
+    view?: { columnsHidden?: boolean; linkZoom?: boolean; compare?: 'previous' };
 }
 
 export type LayoutOrigin = 'restored' | 'team' | 'named' | 'none';
@@ -82,11 +82,15 @@ export type HostToView =
     | (FromWorker & { type: 'schema' | 'rows' | 'bindings' | 'status' | 'renamed' | 'error' | 'tables' })
     | { type: 'command'; name: string; arg?: unknown }
     | { type: 'layout'; layout: Layout; origin: LayoutOrigin; originName?: string }
-    | { type: 'answer'; token: number; choice: string | null };
+    | { type: 'answer'; token: number; choice: string | null }
+    /** Data for the file being compared against (a previous run), or null when comparison stops. */
+    | { type: 'compare'; file: string | null; data?: FromWorker };
 
 export type ViewToHost =
     | { type: 'ready' }
     | { type: 'table'; name: string }
+    /** Compare against a file: 'previous' picks the newest older file in the same folder. */
+    | { type: 'compare'; target: 'previous' | 'pick' | null }
     | { type: 'layout'; layout: Layout }
     | { type: 'state'; state: 'live' | 'paused' | 'finished' | 'static' | 'reading' | 'waiting'; text: string; alerts: number }
     | { type: 'ask'; token: number; message: string; actions: string[]; level?: 'info' | 'warning' | 'error' }

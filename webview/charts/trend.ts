@@ -32,6 +32,18 @@ export function buildCart(ctx: Ctx, mode: 'line' | 'area' | 'step' | 'stack'): B
             push(c, ctx.name(c), X.map((xv, j) => [xv, Yv[j]]), ctx.color(c, i));
         }
     });
+    if (ctx.cmp && !split) {
+        const cmp = ctx.cmp;
+        ys.forEach((c, i) => {
+            if (!cmp.has(c)) { return; }
+            const st = ctx.style(c), color = ctx.color(c, i);
+            let Y2 = cmp.num(c);
+            if (st.smooth) { Y2 = rolling(Y2, st.smooth); }
+            const name = `${ctx.name(c)} · ${cmp.name}`;
+            series.push({ type: 'line', id: `${c}|cmp`, name, data: cmp.x.map((xv, j) => [xv, Y2[j]]), showSymbol: false, yAxisIndex: st.axis === 'right' ? 1 : 0, step: mode === 'step' ? 'end' : false, sampling: 'lttb', itemStyle: { color }, lineStyle: { color, width: st.width, type: 'dashed', opacity: 0.6 }, emphasis: { disabled: true }, z: 1 });
+            chips.push({ name, color, value: lastFinite(Y2), dashed: true });
+        });
+    }
     applyMarks(ctx, series);
     return {
         option: base(ctx, { grid: { left: 10, right: right ? 10 : 16, top: 18, bottom: 24, containLabel: true }, xAxis: cartX(ctx), yAxis: right ? [cartY(ctx, false), cartY(ctx, true)] : [cartY(ctx, false)], series, dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none' }] }),
