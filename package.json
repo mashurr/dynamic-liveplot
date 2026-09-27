@@ -148,6 +148,36 @@
         "command": "dynamicLiveplot.applyLayout",
         "title": "Apply Layout",
         "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.saveLayoutAs",
+        "title": "Save Layout As\u2026",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.saveFolderLayout",
+        "title": "Save as Folder Layout",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.loadLayout",
+        "title": "Load Layout\u2026",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.applyLayoutFile",
+        "title": "Apply Layout",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.revealView",
+        "title": "Show View",
+        "category": "Dynamic Liveplot"
+      },
+      {
+        "command": "dynamicLiveplot.openLayoutFile",
+        "title": "Open Layout File",
+        "category": "Dynamic Liveplot"
       }
     ],
     "menus": {
@@ -226,9 +256,80 @@
         {
           "command": "dynamicLiveplot.applyLayout",
           "when": "false"
+        },
+        {
+          "command": "dynamicLiveplot.saveLayoutAs",
+          "when": "dynamicLiveplot.active"
+        },
+        {
+          "command": "dynamicLiveplot.saveFolderLayout",
+          "when": "dynamicLiveplot.active"
+        },
+        {
+          "command": "dynamicLiveplot.loadLayout",
+          "when": "dynamicLiveplot.active"
+        },
+        {
+          "command": "dynamicLiveplot.applyLayoutFile",
+          "when": "false"
+        },
+        {
+          "command": "dynamicLiveplot.revealView",
+          "when": "false"
+        },
+        {
+          "command": "dynamicLiveplot.openLayoutFile",
+          "when": "false"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "dynamicLiveplot.openLayoutFile",
+          "when": "view == dynamicLiveplot.layouts && viewItem == layout",
+          "group": "navigation"
         }
       ]
-    }
+    },
+    "jsonValidation": [
+      {
+        "fileMatch": [
+          "*.liveplot.json",
+          ".liveplot.json"
+        ],
+        "url": "./schemas/liveplot.schema.json"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "dynamicLiveplot",
+          "title": "Dynamic Liveplot",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "dynamicLiveplot": [
+        {
+          "id": "dynamicLiveplot.views",
+          "name": "Open Views"
+        },
+        {
+          "id": "dynamicLiveplot.layouts",
+          "name": "Saved Layouts"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "dynamicLiveplot.views",
+        "contents": "Plot a data file, live or static.\n[Open Data File](command:dynamicLiveplot.open)\n[Watch Folder](command:dynamicLiveplot.watchFolder)\nWatching a folder plots its newest file and switches when a new one appears."
+      },
+      {
+        "view": "dynamicLiveplot.layouts",
+        "contents": "Save a view's layout with Save Layout As\u2026 in its Layout menu, or Save as Folder Layout to share it with everyone who opens that folder."
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run typecheck && node esbuild.mjs --production",

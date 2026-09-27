@@ -1,0 +1,70 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Dynamic Liveplot layout",
+  "description": "Plots, grid and bindings for Dynamic Liveplot. Columns are referenced by their names in the data file.",
+  "type": "object",
+  "required": ["version", "plots"],
+  "properties": {
+    "version": { "const": 1, "description": "Layout format version." },
+    "grid": {
+      "type": "object",
+      "description": "How many plots fit across and down before the grid scrolls.",
+      "properties": { "columns": { "type": "integer", "minimum": 1, "maximum": 12 }, "rows": { "type": "integer", "minimum": 1, "maximum": 12 } }
+    },
+    "bindings": { "type": "object", "description": "Values for {placeholders} in column names, e.g. {\"ch\": \"A\"}.", "additionalProperties": { "type": "string" } },
+    "calculated": {
+      "type": "array", "description": "Calculated columns.",
+      "items": { "type": "object", "required": ["name", "formula"], "properties": { "name": { "type": "string" }, "formula": { "type": "string", "description": "e.g. idd_mA * vdd_V; names with spaces go in [brackets]." } } }
+    },
+    "groups": {
+      "type": "array", "description": "Named groups of plots.",
+      "items": { "type": "object", "required": ["id", "name"], "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "color": { "type": "string" }, "collapsed": { "type": "boolean" } } }
+    },
+    "plots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "slots"],
+        "properties": {
+          "title": { "type": "string" },
+          "autoTitle": { "type": "boolean" },
+          "type": {
+            "type": "string",
+            "description": "Chart type.",
+            "enum": ["line", "area", "step", "stackedArea", "streamgraph", "bar", "hbar", "stackedBar", "bar100", "lollipop", "waterfall", "radar", "histogram", "density", "ecdf", "box", "violin", "strip", "scatter", "bubble", "density2d", "scatterMatrix", "parallel", "correlation", "pie", "donut", "rose", "treemap", "sunburst", "funnel", "sankey", "chord", "graph", "heatmap", "spectrum", "spectrogram", "calendar", "candlestick", "errorBars", "errorBand", "polar", "gauge", "kpi", "surface", "scatter3d", "bar3d", "map", "custom"]
+          },
+          "group": { "type": ["string", "null"] },
+          "slots": {
+            "type": "object",
+            "description": "Columns in each slot, e.g. {\"x\": [\"timestamp\"], \"y\": [\"idd_mA\"]}.",
+            "additionalProperties": { "type": "array", "items": { "type": "string" } }
+          },
+          "series": {
+            "type": "object",
+            "description": "Style per column.",
+            "additionalProperties": {
+              "type": "object",
+              "properties": { "color": { "type": "string" }, "name": { "type": "string" }, "axis": { "enum": ["left", "right"] }, "smooth": { "type": "integer", "minimum": 0 }, "width": { "type": "number" } }
+            }
+          },
+          "options": {
+            "type": "object",
+            "properties": {
+              "log": { "type": "boolean" }, "logRight": { "type": "boolean" }, "stats": { "type": "boolean" },
+              "window": { "type": "integer", "minimum": 0, "description": "Show only the last N rows." },
+              "skip": { "type": "integer", "minimum": 0, "description": "Skip the first N rows (warm-up)." },
+              "summary": { "enum": ["count", "sum", "mean", "median", "min", "max", "last"] },
+              "bins": { "type": "integer", "minimum": 0 }, "slices": { "type": "integer", "minimum": 2 },
+              "limits": { "type": "array", "items": { "type": "object", "required": ["value", "alert"], "properties": { "value": { "type": "number" }, "alert": { "enum": ["above", "below"] } } } },
+              "custom": { "type": "string", "description": "ECharts option as JSON text (Custom type)." }
+            }
+          }
+        }
+      }
+    },
+    "view": {
+      "type": "object",
+      "properties": { "columnsHidden": { "type": "boolean" }, "linkZoom": { "type": "boolean" }, "compare": { "enum": ["previous"] } }
+    }
+  }
+}
