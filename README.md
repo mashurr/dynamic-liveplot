@@ -2,7 +2,9 @@
 
 Plot any data file in VS Code, including files that are still being written. Open a CSV and it's charted straight away and keeps updating as rows arrive; drag columns to change what's plotted, from 48 chart types.
 
-![Dynamic Liveplot in action: opening a CSV that is still being written, dragging a column onto a plot and changing a chart type](images/demo.gif)
+![All 48 chart types running at once on one live file: lines, bars, distributions, scatter, shares, flows, heatmaps, spectra, finance, gauges, a map and 3D](images/all-charts.gif)
+
+![Opening a CSV that is still being written, dragging a column onto a plot and changing a chart type](images/demo.gif)
 
 ## Features
 
