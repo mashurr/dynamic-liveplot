@@ -1,12 +1,15 @@
 // The view's copy of a source, rebuilt from the worker's schema and row deltas.
 
 import type { ColumnDelta, ColumnInfo, Format, Kind } from '../src/data/protocol';
+import type { Compiled } from './calc';
 
 export class Col {
     num: Float64Array = new Float64Array(0);
     codes: Int32Array = new Int32Array(0);
     dict: string[] = [];
     arrays: { row: number; values: Float64Array }[] = [];
+    /** Calculated columns: the formula and how far it has been computed. */
+    calc?: { formula: string; compiled: Compiled; done: number };
     constructor(readonly name: string, readonly kind: Kind) {}
 }
 
@@ -36,7 +39,9 @@ export class Table {
     applySchema(file: string, format: Format, columns: ColumnInfo[]) {
         this.file = file;
         this.format = format;
+        const calcs = this.columns.filter(c => c.calc);
         this.columns = columns.map(c => new Col(c.name, c.kind));
+        for (const c of calcs) { c.calc!.done = 0; c.num = new Float64Array(0); if (!this.columns.some(x => x.name === c.name)) { this.columns.push(c); } }
         this.byName = new Map(this.columns.map(c => [c.name, c]));
         this.base = 0; this.rows = 0; this.offset = 0;
         this.version++; this.schemaVersion++;
@@ -67,14 +72,52 @@ export class Table {
         this.rows = Math.max(this.rows, end);
         this.offset = dropped;
         if (this.offset - this.base > 65536 && this.offset - this.base > (this.rows - this.base) / 2) { this.compact(); }
+        this.computeCalcs();
         this.version++;
+    }
+
+    /** Add or replace a calculated column. */
+    setCalc(name: string, formula: string, compiled: Compiled) {
+        let c = this.byName.get(name);
+        if (!c || !c.calc) {
+            if (c) { throw new Error(`There's already a column called "${name}".`); }
+            c = new Col(name, 'num');
+            this.columns.push(c);
+            this.byName.set(name, c);
+        }
+        c.calc = { formula, compiled, done: 0 };
+        c.num = new Float64Array(0);
+        this.computeCalcs();
+        this.version++; this.schemaVersion++;
+    }
+    removeCalc(name: string) {
+        const c = this.byName.get(name);
+        if (!c?.calc) { return; }
+        this.columns = this.columns.filter(x => x !== c);
+        this.byName.delete(name);
+        this.version++; this.schemaVersion++;
+    }
+
+    /** Fill calculated columns for rows that arrived since the last call. */
+    private computeCalcs() {
+        for (const c of this.columns) {
+            if (!c.calc) { continue; }
+            const from = Math.max(c.calc.done, this.base), to = this.rows, need = to - this.base;
+            if (to <= from) { continue; }
+            if (c.num.length < need) { const b = new Float64Array(Math.max(need, c.num.length * 2, 1024)).fill(NaN); b.set(c.num.subarray(0, Math.min(c.num.length, b.length))); c.num = b; }
+            const deps = new Map(c.calc.compiled.deps.map(d => [d, this.byName.get(d)] as const));
+            let row = 0;
+            const get = (name: string) => { const dc = deps.get(name); return dc ? dc.num[row - this.base] : NaN; };
+            for (row = from; row < to; row++) { c.num[row - this.base] = c.calc.compiled.run(get); }
+            c.calc.done = to;
+        }
     }
 
     /** Drop buffer space for rows the worker no longer keeps. */
     private compact() {
         const shift = this.offset - this.base;
         for (const c of this.columns) {
-            if (c.kind === 'num' || c.kind === 'time') { c.num = c.num.slice(shift); }
+            if (c.kind === 'num' || c.kind === 'time') { c.num = c.num.slice(shift); if (c.calc) { c.calc.done = Math.max(c.calc.done, this.offset); } }
             else if (c.kind === 'text') { c.codes = c.codes.slice(shift); }
         }
         this.base = this.offset;
