@@ -10,7 +10,11 @@ export function buildFlow(ctx: Ctx, kind: 'sankey' | 'chord' | 'graph'): Built {
         const k = s[j] + '\u0000' + t[j];
         m.set(k, (m.get(k) ?? 0) + (Yv ? (Yv[j] ?? 0) : 1));
     }
-    const links = [...m.entries()].map(([k, value]) => { const [source, target] = k.split('\u0000'); return { source, target, value }; });
+    // Thousands of links can't be read and a force layout on them never settles: keep the heaviest
+    const cap = kind === 'graph' ? 400 : 300, all = m.size;
+    let entries = [...m.entries()];
+    if (entries.length > cap) { entries = entries.sort((a, b) => b[1] - a[1]).slice(0, cap); }
+    const links = entries.map(([k, value]) => { const [source, target] = k.split('\u0000'); return { source, target, value }; });
     const nodes = uniqOrdered(links.flatMap(l => [l.source, l.target]));
     const data: Opt[] = nodes.map((n, i) => ({ name: n, itemStyle: { color: pal(i) } }));
     let series: Opt;
@@ -21,8 +25,9 @@ export function buildFlow(ctx: Ctx, kind: 'sankey' | 'chord' | 'graph'): Built {
     } else {
         const deg: Record<string, number> = {};
         for (const l of links) { deg[l.source] = (deg[l.source] ?? 0) + 1; deg[l.target] = (deg[l.target] ?? 0) + 1; }
-        const mx = Math.max(1, ...links.map(l => l.value));
-        series = { type: 'graph', id: 'gr', layout: 'force', roam: true, force: { repulsion: 160, edgeLength: [40, 110] }, data: data.map(d => ({ ...d, symbolSize: 10 + 5 * Math.sqrt(deg[d.name] ?? 1) })), links: links.map(l => ({ ...l, lineStyle: { width: 1 + 3 * l.value / mx } })), label: { show: nodes.length <= 30, color: V.fg, fontSize: 10, position: 'right' }, lineStyle: { color: V.axis, opacity: 0.6, curveness: 0.1 }, emphasis: { focus: 'adjacency' } };
+        let mx = 1;
+        for (const l of links) { mx = Math.max(mx, l.value); }
+        series = { type: 'graph', id: 'gr', layout: 'force', roam: true, force: { repulsion: 160, edgeLength: [40, 110], layoutAnimation: nodes.length <= 100 }, data: data.map(d => ({ ...d, symbolSize: 10 + 5 * Math.sqrt(deg[d.name] ?? 1) })), links: links.map(l => ({ ...l, lineStyle: { width: 1 + 3 * l.value / mx } })), label: { show: nodes.length <= 30, color: V.fg, fontSize: 10, position: 'right' }, lineStyle: { color: V.axis, opacity: 0.6, curveness: 0.1 }, emphasis: { focus: 'adjacency' } };
     }
-    return { option: base(ctx, { tooltip: tip(V, 'item'), series: [series] }), summary: `${nodes.length} nodes · ${links.length} links` };
+    return { option: base(ctx, { tooltip: tip(V, 'item'), series: [series] }), summary: all > links.length ? `heaviest ${links.length} of ${all} links` : `${nodes.length} nodes · ${links.length} links` };
 }

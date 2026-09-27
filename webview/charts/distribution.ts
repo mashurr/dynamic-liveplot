@@ -2,7 +2,7 @@
 
 import { base, catAx, lab, tip, valAx, type Built, type Ctx, type Opt } from './ctx';
 import { dn } from '../state';
-import { clamp, esc, fmt, fmtInt, hexA, jitter, kde, quart, trunc, uniqOrdered, pal } from '../util';
+import { clamp, esc, fmt, fmtInt, hexA, jitter, kde, quart, sampleOf, trunc, uniqOrdered, pal } from '../util';
 
 type Api = { value(i: number): number; coord(p: number[]): number[]; size(p: number[]): number[] };
 
@@ -45,12 +45,12 @@ export function buildDensity(ctx: Ctx, ecdf: boolean): Built {
         const color = ctx.color(c, i);
         let data: number[][];
         if (ecdf) {
-            const s = [...arrs[i]].sort((a, b) => a - b), step = Math.max(1, Math.floor(s.length / 400));
+            const s = sampleOf(arrs[i], 100_000).slice().sort((a, b) => a - b), step = Math.max(1, Math.floor(s.length / 400));
             data = [];
             for (let j = 0; j < s.length; j += step) { data.push([s[j], (j + 1) / s.length]); }
             if (s.length) { data.push([s[s.length - 1], 1]); }
         } else {
-            data = kde(arrs[i], B.lo - pad, B.hi + pad, 90);
+            data = kde(sampleOf(arrs[i], 20_000), B.lo - pad, B.hi + pad, 90);
         }
         return { type: 'line', id: c, name: ctx.name(c), data, showSymbol: false, step: ecdf ? 'end' : false, smooth: !ecdf, itemStyle: { color }, lineStyle: { color, width: 1.6 }, areaStyle: ecdf ? undefined : { color: hexA(color, 0.14) } };
     });

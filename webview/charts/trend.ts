@@ -1,12 +1,16 @@
 // Line, area, step and stacked area: numbers over rows, time or another number.
 
 import { applyMarks, base, cartX, cartY, type Built, type Ctx, type Opt, type Chip } from './ctx';
-import { lastFinite, rolling, uniqOrdered, pal } from '../util';
+import { lastFinite, linePoints, rolling, uniqOrdered, pal } from '../util';
+
+// Above this many rows a line is drawn from min/max buckets (see linePoints)
+const MAX_POINTS = 20000;
 
 export function buildCart(ctx: Ctx, mode: 'line' | 'area' | 'step' | 'stack'): Built {
     const ys = ctx.slot('y'), split = ctx.one('split'), X = ctx.x;
     const series: Opt[] = [], chips: Chip[] = [], latest: Built['latest'] = [];
-    let right = false;
+    let right = false, decimated = false;
+    const points = (xs: (number | null)[], yv: (number | null)[]) => { if (xs.length > MAX_POINTS) { decimated = true; } return linePoints(xs, yv, MAX_POINTS, ctx.zoom, mode === 'stack'); };
     ys.forEach((c, i) => {
         const st = ctx.style(c);
         if (st.axis === 'right') { right = true; }
@@ -15,21 +19,20 @@ export function buildCart(ctx: Ctx, mode: 'line' | 'area' | 'step' | 'stack'): B
         const common: Opt = { type: 'line', showSymbol: false, symbolSize: 4, yAxisIndex: st.axis === 'right' ? 1 : 0, step: mode === 'step' ? 'end' : false, sampling: 'lttb', emphasis: { disabled: true } };
         if (mode === 'area' || mode === 'stack') { common.areaStyle = { opacity: mode === 'stack' ? 0.5 : 0.16 }; }
         if (mode === 'stack') { common.stack = 'total'; }
-        const push = (id: string, name: string, data: (number | null)[][], color: string, extra: Opt = {}) => {
+        const push = (id: string, name: string, data: (number | null)[][], lv: number | null, color: string, extra: Opt = {}) => {
             series.push({ ...common, id, name, data, itemStyle: { color }, lineStyle: { color, width: st.width }, ...extra });
-            const lv = lastFinite(data.map(d => d[1]));
             chips.push({ name, label: name + (st.axis === 'right' ? ' (right)' : ''), color, value: lv });
             latest.push({ name, value: lv, axis: st.axis });
         };
         if (split) {
             const cats = ctx.col(split);
             uniqOrdered(cats).slice(0, 16).forEach((v, vi) => {
-                const d: (number | null)[][] = [];
-                for (let j = 0; j < X.length; j++) { if (cats[j] === v) { d.push([X[j], Yv[j]]); } }
-                push(`${c}|${v}`, ys.length > 1 ? `${ctx.name(c)} · ${v}` : String(v), d, pal(vi + i * 3), { connectNulls: true });
+                const xs: (number | null)[] = [], yv: (number | null)[] = [];
+                for (let j = 0; j < X.length; j++) { if (cats[j] === v) { xs.push(X[j]); yv.push(Yv[j]); } }
+                push(`${c}|${v}`, ys.length > 1 ? `${ctx.name(c)} · ${v}` : String(v), points(xs, yv), lastFinite(yv), pal(vi + i * 3), { connectNulls: true });
             });
         } else {
-            push(c, ctx.name(c), X.map((xv, j) => [xv, Yv[j]]), ctx.color(c, i));
+            push(c, ctx.name(c), points(X, Yv), lastFinite(Yv), ctx.color(c, i));
         }
     });
     if (ctx.cmp && !split) {
@@ -40,14 +43,14 @@ export function buildCart(ctx: Ctx, mode: 'line' | 'area' | 'step' | 'stack'): B
             let Y2 = cmp.num(c);
             if (st.smooth) { Y2 = rolling(Y2, st.smooth); }
             const name = `${ctx.name(c)} · ${cmp.name}`;
-            series.push({ type: 'line', id: `${c}|cmp`, name, data: cmp.x.map((xv, j) => [xv, Y2[j]]), showSymbol: false, yAxisIndex: st.axis === 'right' ? 1 : 0, step: mode === 'step' ? 'end' : false, sampling: 'lttb', itemStyle: { color }, lineStyle: { color, width: st.width, type: 'dashed', opacity: 0.6 }, emphasis: { disabled: true }, z: 1 });
+            series.push({ type: 'line', id: `${c}|cmp`, name, data: points(cmp.x, Y2), showSymbol: false, yAxisIndex: st.axis === 'right' ? 1 : 0, step: mode === 'step' ? 'end' : false, sampling: 'lttb', itemStyle: { color }, lineStyle: { color, width: st.width, type: 'dashed', opacity: 0.6 }, emphasis: { disabled: true }, z: 1 });
             chips.push({ name, color, value: lastFinite(Y2), dashed: true });
         });
     }
     applyMarks(ctx, series);
     return {
         option: base(ctx, { grid: { left: 10, right: right ? 10 : 16, top: 18, bottom: 24, containLabel: true }, xAxis: cartX(ctx), yAxis: right ? [cartY(ctx, false), cartY(ctx, true)] : [cartY(ctx, false)], series, dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none' }] }),
-        chips, latest,
+        chips, latest, decimated,
     };
 }
 

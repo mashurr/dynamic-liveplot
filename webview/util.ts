@@ -53,13 +53,25 @@ export function lastFinite(arr: ArrayLike<unknown>): number | null {
     return null;
 }
 export interface Quart { q1: number; med: number; q3: number; lo: number; hi: number; out: number[]; min: number; max: number }
+/** At most `max` values, evenly spaced (for estimates over huge columns). */
+export function sampleOf<T>(a: T[], max: number): T[] {
+    if (a.length <= max) { return a; }
+    const step = a.length / max, out = new Array<T>(max);
+    for (let i = 0; i < max; i++) { out[i] = a[Math.floor(i * step)]; }
+    return out;
+}
 export function quart(vals: (number | null)[]): Quart | null {
-    const a = vals.filter((v): v is number => v !== null).sort((x, y) => x - y);
-    if (!a.length) { return null; }
+    const all = vals.filter((v): v is number => v !== null);
+    if (!all.length) { return null; }
+    // Quartiles of huge columns come from 100k evenly spaced values; min and max stay exact
+    const a = Float64Array.from(all.length > 200_000 ? sampleOf(all, 100_000) : all).sort();
+    if (all.length > 200_000) { let mn = Infinity, mx = -Infinity; for (const v of all) { if (v < mn) { mn = v; } if (v > mx) { mx = v; } } a[0] = Math.min(a[0], mn); a[a.length - 1] = Math.max(a[a.length - 1], mx); }
     const q = (p: number) => { const i = (a.length - 1) * p, lo = Math.floor(i), hi = Math.ceil(i); return a[lo] + (a[hi] - a[lo]) * (i - lo); };
     const q1 = q(.25), med = q(.5), q3 = q(.75), iqr = q3 - q1;
-    const lo = a.find(v => v >= q1 - 1.5 * iqr)!, hi = [...a].reverse().find(v => v <= q3 + 1.5 * iqr)!;
-    return { q1, med, q3, lo, hi, out: a.filter(v => v < lo || v > hi), min: a[0], max: a[a.length - 1] };
+    const lo = a.find(v => v >= q1 - 1.5 * iqr)!;
+    let hi = a[a.length - 1];
+    for (let i = a.length - 1; i >= 0; i--) { if (a[i] <= q3 + 1.5 * iqr) { hi = a[i]; break; } }
+    return { q1, med, q3, lo, hi, out: Array.from(a.filter(v => v < lo || v > hi)), min: a[0], max: a[a.length - 1] };
 }
 export interface Stats { n: number; mean: number; std: number; min: number; max: number }
 export function stats(vals: (number | null)[]): Stats | null {
@@ -139,3 +151,32 @@ const ICONS: Record<string, string> = {
     folder: '<path d="M1.5 3.5h4.5l1.5 1.5h7v8.5h-13z"/>',
 };
 export const ic = (name: string, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 16 16" aria-hidden="true">${ICONS[name] ?? ''}</svg>`;
+
+/**
+ * Points for a line. Few points pass through; many are cut to the lowest and highest point of each bucket,
+ * so spikes survive. Inside a zoomed x range the buckets are finer, so zooming in shows full detail.
+ * `sameRows` keeps one row per bucket, the same rows for every series (stacking needs matching x values).
+ */
+export function linePoints(X: (number | null)[], Y: (number | null)[], max: number, zoom: [number, number] | null, sameRows = false): (number | null)[][] {
+    const n = X.length;
+    if (n <= max) { const out = new Array(n); for (let j = 0; j < n; j++) { out[j] = [X[j], Y[j]]; } return out; }
+    let lo = -1, hi = -1;
+    if (zoom) { for (let j = 0; j < n; j++) { const x = X[j]; if (x !== null && x >= zoom[0] && x <= zoom[1]) { if (lo < 0) { lo = j; } hi = j; } } }
+    const coarse = Math.ceil(n / (max / 2)), fine = lo < 0 ? coarse : Math.max(1, Math.ceil((hi - lo + 1) / (max / 2)));
+    const out: (number | null)[][] = [];
+    for (let j = 0; j < n;) {
+        const inFine = lo >= 0 && j >= lo && j <= hi;
+        let e = Math.min(n, j + (inFine ? fine : coarse));
+        if (!inFine && lo >= 0 && j < lo && e > lo) { e = lo; }
+        if (inFine && e > hi + 1) { e = hi + 1; }
+        if (e - j === 1 || sameRows) { out.push([X[j], Y[j]]); j = e; continue; }
+        let a = -1, b = -1;
+        for (let k = j; k < e; k++) { const y = Y[k]; if (y === null) { continue; } if (a < 0 || y < Y[a]!) { a = k; } if (b < 0 || y > Y[b]!) { b = k; } }
+        if (a < 0) { out.push([X[j], null]); } else if (a === b) { out.push([X[a], Y[a]]); } else { const [f, s] = a < b ? [a, b] : [b, a]; out.push([X[f], Y[f]], [X[s], Y[s]]); }
+        j = e;
+    }
+    // The first and newest rows are always drawn, whatever the buckets picked
+    if (out.length && out[0][0] !== X[0]) { out.unshift([X[0], Y[0]]); }
+    if (out.length && out[out.length - 1][0] !== X[n - 1]) { out.push([X[n - 1], Y[n - 1]]); }
+    return out;
+}

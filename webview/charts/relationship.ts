@@ -6,7 +6,8 @@ import { RAMP, esc, fmt, fmtTime, hexA, lastFinite, pal, pearson, trunc, uniqOrd
 
 export function buildScatter(ctx: Ctx, bubble: boolean): Built {
     const X = ctx.x, ys = ctx.slot('y'), split = ctx.one('split'), sz = bubble ? ctx.num(ctx.one('size')!) : null;
-    const N = Math.min(X.length, 5000), off = X.length - N, series: Opt[] = [], chips: Chip[] = [], latest: Built['latest'] = [];
+    // Up to 20,000 points; beyond that evenly spaced rows across the whole range, always ending with the newest
+    const step = Math.max(1, Math.ceil(X.length / 20000)), first = (X.length - 1) % step, series: Opt[] = [], chips: Chip[] = [], latest: Built['latest'] = [];
     let smin = Infinity, smax = -Infinity;
     if (sz) { for (const v of sz) { if (v !== null) { smin = Math.min(smin, v); smax = Math.max(smax, v); } } }
     const sizeFn = sz ? (d: number[]) => 5 + 22 * Math.sqrt(Math.max(0, ((d[2] ?? smin) - smin) / ((smax - smin) || 1))) : 5;
@@ -16,16 +17,16 @@ export function buildScatter(ctx: Ctx, bubble: boolean): Built {
         if (yi) { right = true; }
         if (split) {
             const cats = ctx.col(split);
-            (uniqOrdered(cats.slice(off)) as string[]).slice(0, 16).forEach((v, vi) => {
+            (uniqOrdered(cats) as string[]).slice(0, 16).forEach((v, vi) => {
                 const d: (number | null)[][] = [];
-                for (let j = off; j < X.length; j++) { if (cats[j] === v) { d.push(pt(j)); } }
+                for (let j = first; j < X.length; j += step) { if (cats[j] === v) { d.push(pt(j)); } }
                 const color = pal(vi), name = ys.length > 1 ? `${ctx.name(c)} · ${v}` : String(v);
                 series.push({ type: 'scatter', id: `${c}|${v}`, name, data: d, symbolSize: sizeFn, itemStyle: { color: hexA(color, bubble ? 0.55 : 0.8) }, yAxisIndex: yi });
                 chips.push({ name, color });
             });
         } else {
             const d: (number | null)[][] = [];
-            for (let j = off; j < X.length; j++) { d.push(pt(j)); }
+            for (let j = first; j < X.length; j += step) { d.push(pt(j)); }
             const color = ctx.color(c, i);
             series.push({ type: 'scatter', id: c, name: ctx.name(c), data: d, symbolSize: sizeFn, itemStyle: { color: hexA(color, bubble ? 0.55 : 0.8) }, large: !bubble && d.length > 2000, yAxisIndex: yi });
             chips.push({ name: ctx.name(c), color, value: lastFinite(Yv) });
@@ -37,7 +38,7 @@ export function buildScatter(ctx: Ctx, bubble: boolean): Built {
         ys.forEach((c, i) => {
             if (!cmp.has(c)) { return; }
             const color = ctx.color(c, i), Y2 = cmp.num(c), name = `${ctx.name(c)} · ${cmp.name}`;
-            series.push({ type: 'scatter', id: `${c}|cmp`, name, data: cmp.x.map((xv, j) => [xv, Y2[j]]).slice(-5000), symbolSize: 5, itemStyle: { color: 'transparent', borderColor: color, borderWidth: 1, opacity: 0.7 }, yAxisIndex: ctx.style(c).axis === 'right' ? 1 : 0, z: 1 });
+            series.push({ type: 'scatter', id: `${c}|cmp`, name, data: cmp.x.map((xv, j) => [xv, Y2[j]]).filter((_, j) => j % step === 0), symbolSize: 5, itemStyle: { color: 'transparent', borderColor: color, borderWidth: 1, opacity: 0.7 }, yAxisIndex: ctx.style(c).axis === 'right' ? 1 : 0, z: 1 });
             chips.push({ name, color, dashed: true });
         });
     }
@@ -45,7 +46,7 @@ export function buildScatter(ctx: Ctx, bubble: boolean): Built {
     const fx = (v: number) => (ctx.timeX ? fmtTime(v / 1000) : fmt(v));
     return {
         option: base(ctx, { tooltip: tip(ctx.V, 'item', { formatter: (p: Opt) => `${esc(p.seriesName)}<br>${esc(ctx.xName)}: ${fx(p.value[0])}<br>y: ${fmt(p.value[1])}${sz ? `<br>size: ${fmt(p.value[2])}` : ''}` }), xAxis: cartX(ctx), yAxis: right ? [cartY(ctx, false), cartY(ctx, true)] : [cartY(ctx, false)], series, dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none' }] }),
-        chips, latest,
+        chips, latest, summary: step > 1 ? `1 in ${step} of ${X.length.toLocaleString()} rows` : undefined,
     };
 }
 
