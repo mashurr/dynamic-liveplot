@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { DataClient } from './dataClient';
 import { Layouts } from './layouts';
 import { Panel } from './panel';
+import { registerSidebar } from './sidebar';
 import type { Layout } from './view/protocol';
 
 const DATA_GLOB = '**/*.{csv,tsv,txt,jsonl,ndjson,json,sqlite,sqlite3,db,parquet,xlsx}';
@@ -18,9 +19,11 @@ export function activate(ctx: vscode.ExtensionContext) {
     data = new DataClient(path.join(ctx.extensionPath, 'out'));
     layouts = new Layouts(ctx);
 
+    const refreshSidebar = registerSidebar(ctx, layouts);
     const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     status.command = 'dynamicLiveplot.togglePause';
     Panel.onChange = () => {
+        refreshSidebar();
         const p = Panel.active;
         if (!p) { status.hide(); return; }
         const icon = { live: '$(pulse)', paused: '$(debug-pause)', finished: '$(check)', static: '$(graph)', reading: '$(sync~spin)', waiting: '$(watch)' }[p.viewState.state];
@@ -69,6 +72,10 @@ export function activate(ctx: vscode.ExtensionContext) {
         vscode.commands.registerCommand('dynamicLiveplot.applyLayout', (layout: Layout, name?: string) => {
             if (Panel.active && layout?.plots) { Panel.active.applyLayout(layout, 'named', name); }
         }),
+        vscode.commands.registerCommand('dynamicLiveplot.saveLayoutAs', (p?: Panel) => (p instanceof Panel ? p : Panel.active)?.saveLayoutAs() ?? noView()),
+        vscode.commands.registerCommand('dynamicLiveplot.saveFolderLayout', (p?: Panel) => (p instanceof Panel ? p : Panel.active)?.saveFolderLayout() ?? noView()),
+        vscode.commands.registerCommand('dynamicLiveplot.loadLayout', (p?: Panel) => (p instanceof Panel ? p : Panel.active)?.loadLayout() ?? noView()),
+        vscode.commands.registerCommand('dynamicLiveplot.applyLayoutFile', (uri: vscode.Uri) => (Panel.active ?? [...Panel.all].at(-1))?.loadLayout(uri) ?? noView()),
         vscode.commands.registerCommand('dynamicLiveplot.switchFile', async (p?: Panel) => {
             const panel = p instanceof Panel ? p : Panel.active;
             const dir = panel ? path.dirname(panel.currentFile || panel.spec.path) : undefined;
@@ -84,6 +91,8 @@ export function activate(ctx: vscode.ExtensionContext) {
         }));
     }
 }
+
+function noView() { void vscode.window.showInformationMessage('Open a file or folder in Dynamic Liveplot first.'); }
 
 async function pickDataFile(dir?: string): Promise<vscode.Uri | undefined> {
     const files = await vscode.workspace.findFiles(DATA_GLOB, '**/{node_modules,.git}/**', 5000);
