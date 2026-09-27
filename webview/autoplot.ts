@@ -59,11 +59,13 @@ export function autoPlot(): { count: number; how: string } {
         if (flow && has('sankey')) { plots.push(newPlot(`${dn(a.name)} → ${dn(b.name)}`, 'sankey', { source: [a.name], target: [b.name], y })); if (has('chord')) { plots.push(newPlot('Flows', 'chord', { source: [a.name], target: [b.name], y })); } }
         else { plots.push(newPlot(`${dn(a.name)} › ${dn(b.name)}`, 'treemap', { levels: [a.name, b.name], y })); if (has('sunburst')) { plots.push(newPlot('Shares', 'sunburst', { levels: [a.name, b.name], y })); } }
         how = flow ? 'Two text columns look like from and to, so they show as flows.' : 'Two text columns, so they show as nested shares.';
-    } else if (label && !time) {
-        ys.slice(0, 4).forEach(c => plots.push(newPlot(dn(c), 'bar', { cat: [label.name], y: [c] }, { options: { summary: 'last' } })));
-        if (ys.length === 1 && has('donut')) { plots.push(newPlot(`Share of ${dn(ys[0])}`, 'donut', { cat: [label.name], y: [ys[0]] }, { options: { summary: 'sum' } })); }
-        if (ys.length >= 3) { plots.push(newPlot('All columns', 'parallel', { y: ys.slice(0, 6) })); }
-        if (!ys.length) { plots.push(newPlot(dn(label.name), 'bar', { cat: [label.name] })); }
+    } else if (label && (!time || S.table.length <= 50)) {
+        // One label per row in a small table (a summary per lot, per site…): bars per label read best
+        const vals = nums;
+        vals.slice(0, 4).forEach(c => plots.push(newPlot(dn(c), 'bar', { cat: [label.name], y: [c] }, { options: { summary: 'last' } })));
+        if (vals.length === 1 && has('donut')) { plots.push(newPlot(`Share of ${dn(vals[0])}`, 'donut', { cat: [label.name], y: [vals[0]] }, { options: { summary: 'sum' } })); }
+        if (vals.length >= 3) { plots.push(newPlot('All columns', 'parallel', { y: vals.slice(0, 6) })); }
+        if (!vals.length) { plots.push(newPlot(dn(label.name), 'bar', { cat: [label.name] })); }
         how = `Each row is one ${dn(label.name)}, so numbers show per ${dn(label.name)}.`;
     } else {
         const room = 6 - (arrays.length && has('spectrum') ? 1 : 0) - (counts.length ? 1 : 0) - (split && ys.length ? 1 : 0);

@@ -239,3 +239,6 @@ svg.gl .f { fill: var(--vscode-charts-blue, var(--accent)); stroke: none; opacit
 svg.gl .f2 { fill: var(--vscode-charts-blue, var(--accent)); stroke: none; opacity: .4; }
 svg.gl .m { stroke: var(--muted); }
 .empty { height: 100%; display: grid; place-items: center; color: var(--muted); text-align: center; line-height: 1.6; padding: 20px; }
+.empty .pick { display: grid; gap: 6px; justify-items: stretch; max-width: 420px; margin: 10px auto 0; }
+.empty .pick .vbtn { display: flex; justify-content: space-between; gap: 16px; text-align: left; }
+.empty .dim { opacity: .75; font-size: 12px; }

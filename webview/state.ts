@@ -41,6 +41,8 @@ export const S = {
     search: '',
     started: false,
     alerts: {} as Record<number, boolean>,
+    tables: [] as { name: string; rows: number; columns: number }[],
+    tableName: null as string | null,
 };
 
 let nextId = 1;

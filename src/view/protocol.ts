@@ -74,17 +74,19 @@ export interface InitMessage {
     originName?: string;
     glUri: string;
     mapUri: string;
+    table?: string;
 }
 
 export type HostToView =
     | InitMessage
-    | (FromWorker & { type: 'schema' | 'rows' | 'bindings' | 'status' | 'renamed' | 'error' })
+    | (FromWorker & { type: 'schema' | 'rows' | 'bindings' | 'status' | 'renamed' | 'error' | 'tables' })
     | { type: 'command'; name: string; arg?: unknown }
     | { type: 'layout'; layout: Layout; origin: LayoutOrigin; originName?: string }
     | { type: 'answer'; token: number; choice: string | null };
 
 export type ViewToHost =
     | { type: 'ready' }
+    | { type: 'table'; name: string }
     | { type: 'layout'; layout: Layout }
     | { type: 'state'; state: 'live' | 'paused' | 'finished' | 'static' | 'reading' | 'waiting'; text: string; alerts: number }
     | { type: 'ask'; token: number; message: string; actions: string[]; level?: 'info' | 'warning' | 'error' }

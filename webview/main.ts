@@ -12,6 +12,7 @@ import { alertCount, disposeChart, renderChart, setGlListener, type CardRef } fr
 import { setWorldListener } from './charts/other';
 import { autoAssign, cols, colInfo, dn, fromLayout, kindOf, newPlot, plotCols, remapSlots, S, saveSoon, send, uid, vscode, type Plot } from './state';
 import type { HostToView } from '../src/view/protocol';
+import { Table } from './table';
 import { $, $$, clone, el, esc, fmt, fmtInt, fmtTime, ic } from './util';
 
 interface UIRefs { lp: HTMLElement; tool: HTMLElement; banner: HTMLElement; colsBox: HTMLElement; list: HTMLElement; wrap: HTMLElement; stack: HTMLElement; insp: HTMLElement; cards: Map<number, CardRef>; cro: ResizeObserver }
@@ -26,6 +27,8 @@ function onHost(m: HostToView) {
         case 'init':
             S.mode = m.mode; S.path = m.path; S.name = m.name; S.glUri = m.glUri; S.mapUri = m.mapUri;
             vscode.setState({ mode: m.mode, path: m.path });
+            S.tableName = m.table ?? S.tableName;
+            if (!m.layout) { S.started = false; S.plots = []; S.banner = null; S.sel = null; }
             if (m.layout) {
                 fromLayout(m.layout);
                 S.started = true;
@@ -60,6 +63,11 @@ function onHost(m: HostToView) {
             S.status = m;
             if (pendingAuto && m.state === 'tailing' && m.rows === 0) { runAutoPlot(); }
             updateLive();
+            break;
+        case 'tables':
+            S.tables = m.tables;
+            S.tableName = m.table;
+            if (UI) { renderToolbar(); renderGrid(); }
             break;
         case 'renamed':
             S.table.file = m.to;
@@ -97,6 +105,12 @@ function runAutoPlot() {
 }
 
 function runCommand(name: string) {
+    if (name === 'reinit') {
+        S.table = new Table(); S.tables = []; S.tableName = null; S.plots = []; S.started = false; S.sel = null; S.status = null; S.banner = null;
+        pendingAuto = false;
+        send({ type: 'ready' });
+        return;
+    }
     const custom = extensions.commands[name];
     if (custom) { custom(); return; }
     switch (name) {
@@ -161,7 +175,7 @@ function setColumnsHidden(hide: boolean, save = true) {
 function renderToolbar() {
     if (!UI) { return; }
     const t = S.table, file = t.file ? base(t.file) : S.name;
-    const label = S.mode === 'folder' ? `<span class="dim">${esc(S.name)}/</span>${t.file ? esc(file) : ''}` : esc(file);
+    const label = S.mode === 'folder' ? `<span class="dim">${esc(S.name)}/</span>${t.file ? esc(file) : ''}` : S.tableName && S.tables.length > 1 ? `${esc(S.name)} <span class="dim">›</span> ${esc(S.tableName)}` : esc(file);
     UI.tool.innerHTML = `
       <button class="tbtn icon ${S.columnsHidden ? '' : 'on'}" data-cols title="Show or hide the column list" aria-label="Show or hide the column list">${ic('sidebar')}</button>
       <button class="tbtn src" data-src title="${S.mode === 'folder' ? 'Watching this folder. The newest file is plotted automatically.' : 'Plotting one file'}">${ic(S.mode === 'folder' ? 'eye' : 'table')}<span>${label}</span>${ic('chevD', 'tiny')}</button>
@@ -235,11 +249,17 @@ function sourceMenu(anchor: HTMLElement) {
     showMenu(anchor, [
         S.mode === 'folder' ? { note: `Watching ${S.name}/. When a newer file appears there, this view switches to it and keeps the layout.` } : { note: `Plotting ${S.name}. It won't follow newer files.` },
         { sep: true },
+        ...(S.tables.length > 1 ? [{ label: `Switch ${sheetWord()}…`, run: () => pickTableMenu(anchor) }] : []),
         { label: 'Open Another Data File…', run: () => run('dynamicLiveplot.switchFile') },
         S.mode === 'folder' ? { label: 'Open This File on Its Own', disabled: !file, run: () => run('dynamicLiveplot.openCurrentFile') } : { label: "Watch This File's Folder", run: () => run('dynamicLiveplot.watchParent') },
         { label: 'Open File as Text', disabled: !file && S.mode === 'folder', run: () => run('dynamicLiveplot.openAsText') },
         { label: 'Reveal in Explorer', disabled: !file && S.mode === 'folder', run: () => run('dynamicLiveplot.reveal') },
     ]);
+}
+
+const sheetWord = () => (/\.xlsx$/i.test(S.path) ? 'Sheet' : 'Table');
+function pickTableMenu(anchor: HTMLElement) {
+    showMenu(anchor, S.tables.map(t => ({ label: t.name, hint: `${fmtInt(t.rows)} rows`, strong: t.name === S.tableName, run: () => { if (t.name !== S.tableName) { send({ type: 'table', name: t.name }); } } })));
 }
 
 function layoutMenu(anchor: HTMLElement) {
@@ -394,6 +414,12 @@ function renderGrid() {
     UI.cards.clear();
     UI.cro.disconnect();
     UI.stack.innerHTML = '';
+    if (S.tables.length > 1 && !S.tableName) {
+        const word = sheetWord().toLowerCase();
+        UI.stack.appendChild(el(`<div class="empty"><div><p>${esc(S.name)} has ${S.tables.length} ${word}s. Pick one to plot:</p><div class="pick">${S.tables.map(t => `<button class="vbtn sec" data-table="${esc(t.name)}">${esc(t.name)} <span class="dim">${fmtInt(t.rows)} rows · ${t.columns} columns</span></button>`).join('')}</div></div></div>`));
+        for (const b of $$('[data-table]', UI.stack)) { b.onclick = () => send({ type: 'table', name: b.dataset.table! }); }
+        return;
+    }
     const placed = new Set<number>();
     for (const f of groupSections) { for (const id of f(UI.stack, makeCard)) { placed.add(id); } }
     const grid = el('<div class="lp-grid"></div>');

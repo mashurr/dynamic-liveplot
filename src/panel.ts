@@ -28,7 +28,7 @@ export class Panel {
 
     constructor(
         readonly webviewPanel: vscode.WebviewPanel,
-        readonly spec: SourceSpec,
+        public spec: SourceSpec,
         private readonly ctx: vscode.ExtensionContext,
         private readonly data: DataClient,
         private readonly layouts: Layouts,
@@ -42,7 +42,11 @@ export class Panel {
         webviewPanel.onDidDispose(() => this.dispose());
         if (spec.kind === 'folder') { webviewPanel.title = `${path.basename(spec.path)}/`; }
         webviewPanel.iconPath = vscode.Uri.joinPath(ctx.extensionUri, 'media', 'tab.svg');
-        this.sourceId = data.open(spec, m => this.fromWorker(m));
+        if (spec.kind === 'file' && !spec.table) {
+            const last = layouts.lastTable(spec.path);
+            if (last) { this.spec = { ...spec, table: last }; webviewPanel.title = `${path.basename(spec.path)} › ${last}`; }
+        }
+        this.sourceId = data.open(this.spec, m => this.fromWorker(m));
         this.focusChanged();
     }
 
@@ -71,7 +75,7 @@ export class Panel {
                 void this.webviewPanel.webview.postMessage({
                     type: 'init', mode: this.spec.kind, path: this.spec.path, name: path.basename(this.spec.path),
                     layout: saved?.layout ?? null, origin: saved?.origin ?? 'none', originName: saved?.name,
-                    glUri: this.uri('out', 'gl.js'), mapUri: this.uri('out', 'world.json'),
+                    glUri: this.uri('out', 'gl.js'), mapUri: this.uri('out', 'world.json'), table: this.spec.kind === 'file' ? this.spec.table : undefined,
                 } satisfies HostToView);
                 if (first) {
                     for (const q of this.queue) { void this.webviewPanel.webview.postMessage(q); }
@@ -83,6 +87,17 @@ export class Panel {
             }
             case 'layout':
                 await this.layouts.save(this.spec, m.layout);
+                break;
+            case 'table':
+                if (this.spec.kind !== 'file' || this.spec.table === m.name) { break; }
+                this.data.close(this.sourceId);
+                this.spec = { ...this.spec, table: m.name };
+                void this.layouts.rememberTable(this.spec.path, m.name);
+                this.webviewPanel.title = `${path.basename(this.spec.path)} › ${m.name}`;
+                this.readyCount = 0;
+                this.queue = [];
+                void this.webviewPanel.webview.postMessage({ type: 'command', name: 'reinit' });
+                this.sourceId = this.data.open(this.spec, w => this.fromWorker(w));
                 break;
             case 'state':
                 this.viewState = { state: m.state, text: m.text, alerts: m.alerts };
