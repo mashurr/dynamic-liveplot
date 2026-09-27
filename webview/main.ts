@@ -8,6 +8,7 @@ import './gallery';
 import './analysis';
 import './groups';
 import './bigfiles';
+import './export';
 import { answered, ask, notify, run } from './host';
 import { renderInspector, KIND_GLYPH, KIND_NAME, type InspectorHooks } from './inspector';
 import { gridPicker, showMenu } from './menus';
