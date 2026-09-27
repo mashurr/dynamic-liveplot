@@ -2,9 +2,10 @@
   "name": "dynamic-liveplot",
   "displayName": "Dynamic Liveplot",
   "description": "Plot any data file, live or static, with any chart type.",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "mashurr",
   "license": "MIT",
+  "icon": "icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/mashurr/dynamic-liveplot.git"
@@ -16,6 +17,22 @@
     "Visualization",
     "Data Science",
     "Other"
+  ],
+  "keywords": [
+    "plot",
+    "chart",
+    "live",
+    "csv",
+    "graph",
+    "visualization",
+    "dashboard",
+    "sqlite",
+    "parquet",
+    "excel",
+    "json",
+    "spectrum",
+    "log",
+    "echarts"
   ],
   "activationEvents": [
     "onWebviewPanel:dynamicLiveplot.folder",
