@@ -18,7 +18,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onWebviewPanel:dynamicLiveplot.folder"
+    "onWebviewPanel:dynamicLiveplot.folder",
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "capabilities": {

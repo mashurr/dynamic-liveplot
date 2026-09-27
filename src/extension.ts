@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { DataClient } from './dataClient';
@@ -32,6 +33,8 @@ export function activate(ctx: vscode.ExtensionContext) {
         status.backgroundColor = p.viewState.alerts ? new vscode.ThemeColor('statusBarItem.warningBackground') : undefined;
         status.show();
     };
+
+    offerGrowingFiles(ctx);
 
     ctx.subscriptions.push(
         status,
@@ -90,6 +93,27 @@ export function activate(ctx: vscode.ExtensionContext) {
             if (Panel.active) { Panel.active.command(name); } else { void vscode.window.showInformationMessage('Open a file or folder in Dynamic Liveplot first.'); }
         }));
     }
+}
+
+/** A CSV or JSON Lines file opened as text that is still growing: offer to plot it live, once per file. */
+function offerGrowingFiles(ctx: vscode.ExtensionContext) {
+    const offered = new Set<string>(), QUIET = 'quietFolders';
+    const check = async (doc: vscode.TextDocument) => {
+        const file = doc.uri.fsPath;
+        if (doc.uri.scheme !== 'file' || !/\.(csv|tsv|jsonl|ndjson)$/i.test(file) || offered.has(file)) { return; }
+        if (ctx.workspaceState.get<string[]>(QUIET, []).includes(path.dirname(file))) { return; }
+        offered.add(file);
+        const size = () => fs.promises.stat(file).then(s => s.size, () => -1);
+        const before = await size();
+        await new Promise(r => setTimeout(r, 2500));
+        if (before < 0 || (await size()) <= before) { return; }
+        const pick = await vscode.window.showInformationMessage(`${path.basename(file)} is still being written. Plot it live?`, 'Plot Live', 'Not for This Folder');
+        if (pick === 'Plot Live') { await vscode.commands.executeCommand('vscode.openWith', doc.uri, EDITOR); }
+        if (pick === 'Not for This Folder') { await ctx.workspaceState.update(QUIET, [...ctx.workspaceState.get<string[]>(QUIET, []), path.dirname(file)]); }
+    };
+    const scan = () => { for (const e of vscode.window.visibleTextEditors) { void check(e.document); } };
+    ctx.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(scan));
+    scan();
 }
 
 function noView() { void vscode.window.showInformationMessage('Open a file or folder in Dynamic Liveplot first.'); }
