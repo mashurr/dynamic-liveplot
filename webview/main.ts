@@ -163,6 +163,8 @@ function renderShell() {
     app.appendChild(lp);
     UI = { lp, tool: $('.lp-toolbar', lp), banner: $('.lp-banner', lp), colsBox: $('.lp-cols', lp), list: $('.col-list', lp), wrap: $('.lp-gridwrap', lp), stack: $('.lp-stack', lp), insp: $('.lp-insp', lp), cards: new Map(), cro: new ResizeObserver(onResize), io: null as unknown as IntersectionObserver };
     UI.io = new IntersectionObserver(onNear, { root: UI.wrap, rootMargin: '50% 0px' });
+    // In a narrow editor the column list would cover the plots, so it starts collapsed there
+    if (UI.lp.clientWidth && UI.lp.clientWidth < 560 && !S.columnsHidden) { setColumnsHidden(true, false); }
     let listScroll = 0;
     UI.list.addEventListener('scroll', () => { clearTimeout(listScroll); listScroll = window.setTimeout(updateColumnValues, 80); }, { passive: true });
     const search = $('.search input', lp) as HTMLInputElement;
@@ -317,7 +319,7 @@ function renderColumns() {
     const listed = shown.slice(0, LIST_CAP);
     UI.list.innerHTML = !all.length ? `<div class="note">${S.status?.state === 'waiting' ? 'Waiting for data…' : 'Reading…'}</div>` : shown.length ? listed.map(c => {
         const d = dn(c.name), calc = S.table.col(c.name)?.calc;
-        return `<div class="col" draggable="true" data-col="${esc(c.name)}" role="listitem" title="${calc ? `calculated: ${esc(calc.formula)} (double-click to edit)` : `${KIND_NAME[c.kind]} column: drag onto a plot`}">
+        return `<div class="col" draggable="true" tabindex="0" data-col="${esc(c.name)}" role="listitem" title="${calc ? `calculated: ${esc(calc.formula)} (double-click to edit)` : `${KIND_NAME[c.kind]} column: drag onto a plot, or press Enter to add it`}">
           <span class="k">${calc ? 'ƒ' : KIND_GLYPH[c.kind]}</span><span class="n">${esc(d)}</span>
           ${d !== c.name ? `<span class="raw">${esc(c.name)}</span>` : '<span class="v" data-v></span>'}
           <canvas width="92" height="40"></canvas>
@@ -326,6 +328,7 @@ function renderColumns() {
     for (const n of $$('.col', UI.list)) {
         const col = n.dataset.col!;
         n.addEventListener('dragstart', e => { e.dataTransfer!.setData('text/plain', col); e.dataTransfer!.effectAllowed = 'copy'; startDrag(col); });
+        n.addEventListener('keydown', e => { if (e.target === n && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); quickAdd(col); } });
         n.addEventListener('dblclick', () => { if (S.table.col(col)?.calc) { document.dispatchEvent(new CustomEvent('lp-calc-edit', { detail: col })); } else { quickAdd(col); } });
         ($('.add', n) as HTMLButtonElement).onclick = e => { e.stopPropagation(); quickAdd(col); };
     }

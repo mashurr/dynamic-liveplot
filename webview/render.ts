@@ -83,6 +83,7 @@ export function renderChart(ref: CardRef, force = false) {
     const hint = ref.hint, miss = missingSlots(p), gone = plotCols(p).filter(c => !colInfo(c));
     const showHint = (html: string, err = false) => { disposeChart(ref); hint.hidden = false; hint.className = 'hint' + (err ? ' err' : ''); hint.innerHTML = html; ref.legend.innerHTML = ''; ref.sigBase = sigBase; ref.out = undefined; };
     if (!t.columns.length) { showHint('Waiting for data…'); return; }
+    if (!t.length && !plotCols(p).some(c => colInfo(c)?.calc)) { showHint('No rows yet. This plot fills in as rows arrive.'); return; }
     if (miss.length) {
         showHint(`<div><b>${esc(T.label)}</b> needs ${miss.map(s => `<b>${esc(s.label)}</b>${s.min ? ` (${s.min} or more)` : ''}`).join(', ')}.<br>Drop columns here, or fill the slots in the panel on the right.${gone.length ? `<br>Not in this file: ${esc(gone.join(', '))}` : ''}</div>`);
         setAlert(p, false);
