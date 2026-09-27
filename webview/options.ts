@@ -2,11 +2,10 @@
 
 import { autoLog, autoPlot } from './autoplot';
 import { recommend } from './charts/recommend';
-import { TYPES, TYPE_LIST } from './charts/registry';
+import { TYPES } from './charts/registry';
 import { afterAdd, extensions } from './hooks';
 import { sections, wirings } from './inspector';
-import { showMenu, type MenuItem } from './menus';
-import { colInfo, dn, remapSlots, S, saveSoon, type Plot } from './state';
+import { colInfo, dn, S, saveSoon, type Plot } from './state';
 import { $, $$, esc, ic, AGGS } from './util';
 
 extensions.recommend = recommend;
@@ -43,6 +42,7 @@ wirings.push((p, box, h) => {
             const o = p.options as Record<string, unknown>;
             if (n.type === 'checkbox') { o[key] = n.checked || undefined; }
             else if (key === 'summary') { o[key] = n.value; }
+            else if (key === 'slices') { o[key] = +n.value; }
             else { o[key] = Math.max(0, +n.value || 0) || undefined; }
             h.soft(p);
         };
@@ -68,17 +68,4 @@ extensions.commands.linkZoom = () => {
     S.linkZoom = !S.linkZoom;
     saveSoon();
     document.dispatchEvent(new CustomEvent('lp-structure'));
-};
-
-// Chart type menu (the full gallery replaces this)
-extensions.openTypes = (p: Plot) => {
-    document.dispatchEvent(new CustomEvent('lp-select', { detail: p.id }));
-    const anchor = document.querySelector<HTMLElement>('.lp-insp [data-type]') ?? document.querySelector<HTMLElement>(`.card[data-id="${p.id}"] .card-h`)!;
-    const items: MenuItem[] = [];
-    let group = '';
-    for (const T of TYPE_LIST) {
-        if (T.group !== group) { if (group) { items.push({ sep: true }); } group = T.group; items.push({ note: group }); }
-        items.push({ label: T.label, strong: T.id === p.type, run: () => { remapSlots(p, T.id); document.dispatchEvent(new CustomEvent('lp-structure')); } });
-    }
-    showMenu(anchor, items);
 };

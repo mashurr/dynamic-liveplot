@@ -4,10 +4,12 @@ import './charts/index';
 import { TYPES, glyph } from './charts/registry';
 import { afterAdd, extensions, groupSections } from './hooks';
 import './options';
+import './gallery';
 import { answered, ask, notify, run } from './host';
 import { renderInspector, KIND_GLYPH, KIND_NAME, type InspectorHooks } from './inspector';
 import { gridPicker, showMenu } from './menus';
 import { alertCount, disposeChart, renderChart, setGlListener, type CardRef } from './render';
+import { setWorldListener } from './charts/other';
 import { autoAssign, cols, colInfo, dn, fromLayout, kindOf, newPlot, plotCols, remapSlots, S, saveSoon, send, uid, vscode, type Plot } from './state';
 import type { HostToView } from '../src/view/protocol';
 import { $, $$, clone, el, esc, fmt, fmtInt, fmtTime, ic } from './util';
@@ -472,6 +474,7 @@ export function select(id: number | null) {
 }
 document.addEventListener('lp-select', e => select((e as CustomEvent<number>).detail));
 document.addEventListener('lp-structure', () => changed(true));
+document.addEventListener('lp-retitle', e => { const p = S.plots.find(x => x.id === (e as CustomEvent<number>).detail); if (p?.autoTitle) { p.title = autoTitle(p); } });
 document.addEventListener('lp-alert', e => {
     const id = (e as CustomEvent<number>).detail, ref = UI?.cards.get(id);
     ref?.card.classList.toggle('alert', !!S.alerts[id]);
@@ -501,6 +504,7 @@ export function renderInspectorNow() { if (UI) { renderInspector(UI.insp, hooks)
 
 export function forceRebuild() { if (UI) { for (const r of UI.cards.values()) { r.sigBase = undefined; renderChart(r, true); } } }
 setGlListener(forceRebuild);
+setWorldListener(forceRebuild);
 new MutationObserver(() => { forceRebuild(); updateColumnValues(); }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
 /* ---------- redraw loop ---------- */
