@@ -1,7 +1,13 @@
 // Messages between the extension host and the data worker.
 
 export type Kind = 'num' | 'time' | 'text' | 'array';
-export type Format = 'csv' | 'jsonl' | 'json';
+export type Format = 'csv' | 'jsonl' | 'json' | 'sqlite' | 'parquet' | 'xlsx';
+
+export interface TableInfo {
+    name: string;
+    rows: number;
+    columns: number;
+}
 
 export interface ColumnInfo {
     name: string;
@@ -9,7 +15,7 @@ export interface ColumnInfo {
 }
 
 export type SourceSpec =
-    | { kind: 'file'; path: string }
+    | { kind: 'file'; path: string; table?: string }
     | { kind: 'folder'; path: string };
 
 export interface OpenOptions {
@@ -53,4 +59,6 @@ export type FromWorker =
     | { type: 'bindings'; id: number; bindings: Record<string, string> }
     | { type: 'status'; id: number; file: string; state: 'waiting' | 'reading' | 'tailing' | 'missing'; bytesRead: number; size: number; rows: number; lastGrowth: number; badLines: number }
     | { type: 'renamed'; id: number; from: string; to: string }
+    /** Tables (SQLite), sheets (Excel) or the one table of a Parquet file; sent before any data. */
+    | { type: 'tables'; id: number; file: string; tables: TableInfo[]; table: string | null }
     | { type: 'error'; id: number; message: string };

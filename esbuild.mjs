@@ -68,6 +68,7 @@ const GL_EXPR = `function __lpExpr(src) {
 // Assets loaded on demand by the webview: ECharts GL (expects ECharts as a global) and world outlines for maps
 function copyAssets() {
     fs.mkdirSync('out', { recursive: true });
+    fs.copyFileSync('node_modules/sql.js/dist/sql-wasm.wasm', 'out/sql-wasm.wasm');
     // ECharts GL evaluates a few size expressions ("width * 1.0 / 16") with new Function, which the
     // webview's CSP forbids; swap in a small arithmetic evaluator instead of allowing eval
     const gl = fs.readFileSync('node_modules/echarts-gl/dist/echarts-gl.min.js', 'utf8');

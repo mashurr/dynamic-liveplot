@@ -13,6 +13,7 @@ export function isEmpty(raw: unknown): boolean {
     if (raw === null || raw === undefined) { return true; }
     if (typeof raw === 'string') { return EMPTY.has(raw.trim().toLowerCase()); }
     if (typeof raw === 'number') { return Number.isNaN(raw); }
+    if (raw instanceof Date) { return Number.isNaN(raw.getTime()); }
     return false;
 }
 
@@ -39,6 +40,7 @@ function numLike(raw: unknown): boolean {
 
 /** Seconds since the epoch. `scale` converts numeric cells (1 for seconds, 0.001 for milliseconds). */
 export function toTime(raw: unknown, scale: number): number {
+    if (raw instanceof Date) { return raw.getTime() / 1000; }
     if (typeof raw === 'number') { return raw * scale; }
     if (typeof raw !== 'string') { return NaN; }
     const s = raw.trim();
@@ -52,6 +54,7 @@ export function toTime(raw: unknown, scale: number): number {
 export function toText(raw: unknown): string | null {
     if (isEmpty(raw)) { return null; }
     if (typeof raw === 'string') { return raw; }
+    if (raw instanceof Date) { return raw.toISOString(); }
     if (typeof raw === 'object') { return JSON.stringify(raw); }
     return String(raw);
 }
@@ -114,6 +117,7 @@ export function detectKind(name: string, samples: unknown[]): Detected {
     if (vals.every(v => toArray(v) !== null) && vals.some(v => Array.isArray(v) || (typeof v === 'string' && v.trim().startsWith('[')))) {
         return { kind: 'array', scale: 1 };
     }
+    if (vals.every(v => v instanceof Date)) { return { kind: 'time', scale: 1 }; }
     if (vals.every(numLike)) {
         if (TIME_NAME.test(name)) {
             const nums = vals.map(toNum).filter(Number.isFinite);
@@ -133,7 +137,7 @@ export function fits(kind: Kind, raw: unknown): boolean {
     if (isEmpty(raw)) { return true; }
     switch (kind) {
         case 'num': return numLike(raw);
-        case 'time': return !Number.isNaN(toTime(raw, 1));
+        case 'time': return raw instanceof Date || !Number.isNaN(toTime(raw, 1));
         case 'array': return toArray(raw) !== null;
         default: return true;
     }

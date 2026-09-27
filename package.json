@@ -47,6 +47,21 @@
           },
           {
             "filenamePattern": "*.json"
+          },
+          {
+            "filenamePattern": "*.sqlite"
+          },
+          {
+            "filenamePattern": "*.sqlite3"
+          },
+          {
+            "filenamePattern": "*.db"
+          },
+          {
+            "filenamePattern": "*.parquet"
+          },
+          {
+            "filenamePattern": "*.xlsx"
           }
         ],
         "priority": "option"
@@ -86,17 +101,17 @@
       },
       {
         "command": "dynamicLiveplot.changeChartType",
-        "title": "Change Chart Type…",
+        "title": "Change Chart Type\u2026",
         "category": "Dynamic Liveplot"
       },
       {
         "command": "dynamicLiveplot.editBindings",
-        "title": "Edit Bindings…",
+        "title": "Edit Bindings\u2026",
         "category": "Dynamic Liveplot"
       },
       {
         "command": "dynamicLiveplot.export",
-        "title": "Export…",
+        "title": "Export\u2026",
         "category": "Dynamic Liveplot"
       },
       {
@@ -126,7 +141,7 @@
       },
       {
         "command": "dynamicLiveplot.switchFile",
-        "title": "Open Another Data File…",
+        "title": "Open Another Data File\u2026",
         "category": "Dynamic Liveplot"
       },
       {
@@ -139,14 +154,14 @@
       "editor/title": [
         {
           "command": "dynamicLiveplot.open",
-          "when": "resourceExtname =~ /^\\.(csv|tsv|jsonl|ndjson|json)$/ && activeCustomEditorId != 'dynamicLiveplot.file'",
+          "when": "resourceExtname =~ /^\\.(csv|tsv|jsonl|ndjson|json|sqlite|sqlite3|db|parquet|xlsx)$/ && activeCustomEditorId != 'dynamicLiveplot.file'",
           "group": "navigation"
         }
       ],
       "explorer/context": [
         {
           "command": "dynamicLiveplot.open",
-          "when": "!explorerResourceIsFolder && resourceExtname =~ /^\\.(csv|tsv|jsonl|ndjson|json)$/",
+          "when": "!explorerResourceIsFolder && resourceExtname =~ /^\\.(csv|tsv|jsonl|ndjson|json|sqlite|sqlite3|db|parquet|xlsx)$/",
           "group": "navigation@9"
         },
         {
@@ -224,14 +239,19 @@
   },
   "devDependencies": {
     "@types/node": "20.x",
+    "@types/sql.js": "^1.4.11",
     "@types/vscode": "^1.90.0",
     "echarts": "^6.1.0",
     "echarts-gl": "^2.1.0",
     "esbuild": "^0.28.2",
     "eslint": "^9.25.1",
+    "hyparquet": "^1.31.2",
+    "hyparquet-compressors": "^1.1.2",
+    "sql.js": "^1.14.2",
     "topojson-client": "^3.1.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.70.0",
-    "world-atlas": "^2.0.2"
+    "world-atlas": "^2.0.2",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
 }

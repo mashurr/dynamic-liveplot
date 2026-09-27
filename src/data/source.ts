@@ -10,6 +10,9 @@ import { flatten, jsonRows } from './json';
 import type { Format, FromWorker, OpenOptions, SchemaReason, SourceSpec } from './protocol';
 import { Store, type Cell } from './store';
 import { Tail } from './tail';
+import { excelRows, excelSheets, parquetInfo, parquetRows, sqliteRows, sqliteTables } from './tables';
+
+const TABLE_POLL_MS = 1000;
 
 const DETECT_ROWS = 200;
 const WIDEN_ROWS = 5000;
@@ -21,6 +24,9 @@ const SLICE_MS = 40;
 const MAX_JSON_BYTES = 512 * 1024 * 1024;
 
 export function formatOf(file: string): Format {
+    if (/\.(sqlite|sqlite3|db)$/i.test(file)) { return 'sqlite'; }
+    if (/\.parquet$/i.test(file)) { return 'parquet'; }
+    if (/\.xlsx$/i.test(file)) { return 'xlsx'; }
     if (/\.(jsonl|ndjson)$/i.test(file)) { return 'jsonl'; }
     if (/\.json$/i.test(file)) { return 'json'; }
     return 'csv';
@@ -51,6 +57,7 @@ export class Source {
     private caughtUp = false;
     private lastGrowth = 0;
     private badLines = 0;
+    private progress = 0;
     private state: State = 'waiting';
     private schemaSent = false;
     private timer: NodeJS.Timeout | null = null;
@@ -60,6 +67,11 @@ export class Source {
     private watcher: fs.FSWatcher | null = null;
     private folder: FolderWatch | null = null;
     private closed = false;
+    private table: string | null = null;
+    private lastRowid = 0;
+    private tableStamp = '';
+    private tableTimer: NodeJS.Timeout | null = null;
+    private tableBusy = false;
 
     constructor(private id: number, private spec: SourceSpec, private options: OpenOptions, private post: (m: FromWorker, transfer?: ArrayBuffer[]) => void) {
         this.store = this.newStore();
@@ -99,6 +111,7 @@ export class Source {
         this.watcher = null;
         if (this.timer) { clearTimeout(this.timer); this.timer = null; }
         if (this.flushTimer) { clearTimeout(this.flushTimer); this.flushTimer = null; }
+        if (this.tableTimer) { clearInterval(this.tableTimer); this.tableTimer = null; }
     }
 
     private onNewest(file: string) {
@@ -127,10 +140,84 @@ export class Source {
         this.keys = new Map(); this.lineRest = ''; this.jsonParts = []; this.jsonBytes = 0;
         this.detected = []; this.bindingCol = -1; this.buffered = []; this.ready = false;
         this.caughtUp = false; this.lastGrowth = 0; this.badLines = 0;
+        this.table = null; this.lastRowid = 0;
+        if (this.format === 'sqlite' || this.format === 'parquet' || this.format === 'xlsx') {
+            this.tail = null;
+            void this.openTables();
+            return;
+        }
         this.tail = new Tail(file);
         this.state = 'waiting';
         this.watchFile();
         this.schedule(0);
+    }
+
+    private stamp(): string {
+        const parts = [this.file, this.file + '-wal'].map(f => { try { const st = fs.statSync(f); return `${st.size}:${st.mtimeMs}`; } catch { return '-'; } });
+        return parts.join('|');
+    }
+
+    /** Lists the file's tables, then reads the chosen one (or waits for the user to pick). */
+    private async openTables() {
+        this.setState('reading');
+        try {
+            const tables = this.format === 'sqlite' ? await sqliteTables(this.file) : this.format === 'parquet' ? await parquetInfo(this.file) : excelSheets(this.file);
+            if (this.closed) { return; }
+            const wanted = this.spec.kind === 'file' ? this.spec.table : undefined;
+            const table = wanted && tables.some(t => t.name === wanted) ? wanted : tables.length === 1 ? tables[0].name : null;
+            this.post({ type: 'tables', id: this.id, file: this.file, tables, table });
+            if (!tables.length) { this.error(`${path.basename(this.file)} has no ${this.format === 'xlsx' ? 'sheets' : 'tables'} to plot.`); return; }
+            if (!table) { this.setState('waiting'); return; }
+            this.table = table;
+            this.tableStamp = this.stamp();
+            await this.readTable();
+            if (this.closed) { return; }
+            this.atEnd();
+            this.tableTimer = setInterval(() => void this.pollTable(), TABLE_POLL_MS);
+        } catch (e) {
+            this.error(`${path.basename(this.file)} couldn't be read: ${(e as Error).message}`);
+            this.setState('missing');
+        }
+    }
+
+    private async readTable() {
+        const table = this.table!;
+        if (this.format === 'sqlite') {
+            const r = await sqliteRows(this.file, table, this.lastRowid);
+            this.lastRowid = r.lastRowid;
+            for (const row of r.rows) { this.object(row); }
+        } else if (this.format === 'parquet') {
+            await parquetRows(this.file, (rows, done) => { for (const row of rows) { this.object(row); } this.progress = done; this.scheduleFlush(); });
+        } else {
+            for (const row of excelRows(this.file, table)) { this.object(row); }
+        }
+    }
+
+    /** SQLite tables are followed live by reading rows added since the last check; other files reload when they change. */
+    private async pollTable() {
+        if (this.tableBusy || this.closed) { return; }
+        const now = this.stamp();
+        if (now === this.tableStamp) { return; }
+        this.tableStamp = now;
+        this.tableBusy = true;
+        try {
+            if (this.format === 'sqlite') {
+                const r = await sqliteRows(this.file, this.table!, this.lastRowid);
+                if (!r.hasRowid) { this.openFile(this.file, 'replaced'); return; }
+                if (r.rows.length) {
+                    this.lastRowid = r.lastRowid;
+                    for (const row of r.rows) { this.object(row); }
+                    if (!this.ready) { this.finishDetect(); }
+                    this.lastGrowth = Date.now();
+                    this.scheduleFlush();
+                }
+            } else {
+                if (this.spec.kind === 'file' && this.table) { this.spec = { ...this.spec, table: this.table }; }
+                this.openFile(this.file, 'replaced');
+            }
+        } catch (e) {
+            this.error(`${path.basename(this.file)} couldn't be read: ${(e as Error).message}`);
+        } finally { this.tableBusy = false; }
     }
 
     private watchFile() {
@@ -208,6 +295,7 @@ export class Source {
 
     private atEnd() {
         if (this.format === 'json' && !this.ready) { this.parseJson(); }
+        if (this.table === null && this.tail === null) { return; }
         if (!this.ready && (this.buffered.length || this.names)) { this.finishDetect(); }
         this.caughtUp = true;
         this.setState(this.state === 'missing' ? 'missing' : 'tailing');
@@ -377,7 +465,8 @@ export class Source {
 
     private postStatus() {
         const t = this.tail;
-        this.post({ type: 'status', id: this.id, file: this.file, state: this.state, bytesRead: t?.position ?? 0, size: t?.size ?? 0, rows: this.store.rows, lastGrowth: this.lastGrowth, badLines: this.badLines });
+        const size = t ? t.size : 100, read = t ? t.position : Math.round((this.state === 'reading' ? this.progress : 1) * 100);
+        this.post({ type: 'status', id: this.id, file: this.file, state: this.state, bytesRead: read, size, rows: this.store.rows, lastGrowth: this.lastGrowth, badLines: this.badLines });
     }
 
     private error(message: string) { this.post({ type: 'error', id: this.id, message }); }
