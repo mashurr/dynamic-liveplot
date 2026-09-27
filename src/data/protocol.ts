@@ -57,7 +57,7 @@ export type SchemaReason = 'opened' | 'switched' | 'replaced' | 'truncated' | 'c
 export type FromWorker =
     /** The columns changed; the client drops what it has and a full `rows` message follows. */
     | { type: 'schema'; id: number; file: string; format: Format; columns: ColumnInfo[]; reason: SchemaReason }
-    | { type: 'rows'; id: number; first: number; count: number; dropped: number; columns: ColumnDelta[] }
+    | { type: 'rows'; id: number; first: number; count: number; dropped: number; columns: ColumnDelta[]; packed?: import('../view/pack').Packed }
     | { type: 'bindings'; id: number; bindings: Record<string, string> }
     | { type: 'status'; id: number; file: string; state: 'waiting' | 'reading' | 'tailing' | 'missing'; bytesRead: number; size: number; rows: number; lastGrowth: number; badLines: number; stride: number; fileRows: number }
     | { type: 'renamed'; id: number; from: string; to: string }
@@ -65,4 +65,4 @@ export type FromWorker =
     | { type: 'tables'; id: number; file: string; tables: TableInfo[]; table: string | null }
     | { type: 'error'; id: number; message: string }
     /** Every row of a range, answering `range`. */
-    | { type: 'detail'; id: number; first: number; count: number; columns: ColumnInfo[]; deltas: ColumnDelta[] };
+    | { type: 'detail'; id: number; first: number; count: number; columns: ColumnInfo[]; deltas: ColumnDelta[]; packed?: import('../view/pack').Packed };

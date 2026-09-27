@@ -16,6 +16,8 @@ import { alertCount, disposeChart, renderChart, setGlListener, type CardRef } fr
 import { setWorldListener } from './charts/other';
 import { autoAssign, cols, colInfo, dn, fromLayout, kindOf, newPlot, plotCols, remapSlots, S, saveSoon, send, uid, vscode, type Plot } from './state';
 import type { HostToView } from '../src/view/protocol';
+import type { FromWorker } from '../src/data/protocol';
+import { unpackDeltas } from '../src/view/pack';
 import { Table } from './table';
 import { $, $$, clone, el, esc, fmt, fmtInt, fmtTime, ic } from './util';
 
@@ -24,7 +26,17 @@ let UI: UIRefs | null = null;
 let dirty = false;
 
 /* ---------- messages from the extension ---------- */
-window.addEventListener('message', e => onHost(e.data as HostToView));
+/** Row data arrives with its arrays packed into two buffers (see pack.ts). */
+function unpackedData<T extends FromWorker>(m: T): T {
+    if (m.type === 'rows' && m.packed) { return { ...m, columns: unpackDeltas(m.columns, m.packed), packed: undefined }; }
+    if (m.type === 'detail' && m.packed) { return { ...m, deltas: unpackDeltas(m.deltas, m.packed), packed: undefined }; }
+    return m;
+}
+function unpacked(m: HostToView): HostToView {
+    if (m.type === 'compare' && m.data) { return { ...m, data: unpackedData(m.data) }; }
+    return 'id' in m ? unpackedData(m as FromWorker) as HostToView : m;
+}
+window.addEventListener('message', e => onHost(unpacked(e.data as HostToView)));
 
 function onHost(m: HostToView) {
     switch (m.type) {

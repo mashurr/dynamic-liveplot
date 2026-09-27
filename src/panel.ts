@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { DataClient } from './dataClient';
+import { packDeltas } from './view/pack';
 import type { FromWorker, SourceSpec } from './data/protocol';
 import type { Layouts } from './layouts';
 import type { HostToView, Layout, ViewToHost } from './view/protocol';
@@ -23,6 +24,13 @@ export interface PanelState {
     state: 'live' | 'paused' | 'finished' | 'static' | 'reading' | 'waiting';
     text: string;
     alerts: number;
+}
+
+/** Row data with every column's arrays packed into two buffers (see pack.ts). */
+function packed(m: FromWorker): FromWorker {
+    if (m.type === 'rows') { const p = packDeltas(m.columns); return { ...m, columns: p.columns, packed: p.packed }; }
+    if (m.type === 'detail') { const p = packDeltas(m.deltas); return { ...m, deltas: p.columns, packed: p.packed }; }
+    return m;
 }
 
 export class Panel {
@@ -78,7 +86,7 @@ export class Panel {
     private fromWorker(m: FromWorker) {
         if (m.type === 'schema') { this.file = m.file; }
         if (m.type === 'renamed') { this.file = m.to; }
-        this.post(m as HostToView);
+        this.post(packed(m) as HostToView);
     }
 
     private async fromView(m: ViewToHost) {
@@ -169,7 +177,7 @@ export class Panel {
         }
         const f = file;
         this.post({ type: 'compare', file: f });
-        this.compareId = this.data.open({ kind: 'file', path: f }, m => this.post({ type: 'compare', file: f, data: m }));
+        this.compareId = this.data.open({ kind: 'file', path: f }, m => this.post({ type: 'compare', file: f, data: packed(m) }));
     }
 
     async saveLayoutAs() {
