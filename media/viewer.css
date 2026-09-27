@@ -87,7 +87,7 @@ button { font: inherit; color: inherit; }
 .search { display: flex; align-items: center; gap: 6px; margin: 0 8px 6px; padding: 0 6px; height: 26px; background: var(--input); border: 1px solid var(--input-border); border-radius: 2px; color: var(--muted); }
 .search:focus-within { border-color: var(--accent); }
 .search input { flex: 1; min-width: 0; border: 0; background: none; outline: none; color: var(--input-fg); font: inherit; }
-.col-list { flex: 1; overflow: auto; padding: 0 4px 6px; }
+.col-list { flex: 1; overflow: auto; padding: 0 4px 6px; position: relative; }
 .col { display: grid; grid-template-columns: 18px minmax(0, 1fr) 46px; grid-template-rows: auto auto; column-gap: 6px; align-items: center; padding: 4px 6px; border-radius: 3px; cursor: grab; position: relative; }
 .col:hover { background: var(--hover); }
 .col:active { cursor: grabbing; }

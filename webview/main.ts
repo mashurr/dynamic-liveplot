@@ -19,7 +19,7 @@ import type { HostToView } from '../src/view/protocol';
 import { Table } from './table';
 import { $, $$, clone, el, esc, fmt, fmtInt, fmtTime, ic } from './util';
 
-interface UIRefs { lp: HTMLElement; tool: HTMLElement; banner: HTMLElement; colsBox: HTMLElement; list: HTMLElement; wrap: HTMLElement; stack: HTMLElement; insp: HTMLElement; cards: Map<number, CardRef>; cro: ResizeObserver }
+interface UIRefs { lp: HTMLElement; tool: HTMLElement; banner: HTMLElement; colsBox: HTMLElement; list: HTMLElement; wrap: HTMLElement; stack: HTMLElement; insp: HTMLElement; cards: Map<number, CardRef>; cro: ResizeObserver; io: IntersectionObserver }
 let UI: UIRefs | null = null;
 let dirty = false;
 
@@ -90,6 +90,8 @@ function onHost(m: HostToView) {
             break;
         case 'layout':
             fromLayout(m.layout);
+            // A layout chosen before the first rows arrive must not be replaced by auto-plot
+            S.started = true; pendingAuto = false;
             document.dispatchEvent(new CustomEvent('lp-schema', { detail: 'layout' }));
             S.banner = { text: m.origin === 'team' ? `Applied the team layout.` : `Applied layout "${m.originName ?? ''}".` };
             changed(true);
@@ -102,6 +104,9 @@ function onHost(m: HostToView) {
             break;
         case 'detail':
             document.dispatchEvent(new CustomEvent('lp-detail', { detail: m }));
+            break;
+        case 'visible':
+            document.dispatchEvent(new CustomEvent('lp-visible', { detail: m.visible }));
             break;
     }
 }
@@ -156,7 +161,10 @@ function renderShell() {
       </div>
     </div>`);
     app.appendChild(lp);
-    UI = { lp, tool: $('.lp-toolbar', lp), banner: $('.lp-banner', lp), colsBox: $('.lp-cols', lp), list: $('.col-list', lp), wrap: $('.lp-gridwrap', lp), stack: $('.lp-stack', lp), insp: $('.lp-insp', lp), cards: new Map(), cro: new ResizeObserver(onResize) };
+    UI = { lp, tool: $('.lp-toolbar', lp), banner: $('.lp-banner', lp), colsBox: $('.lp-cols', lp), list: $('.col-list', lp), wrap: $('.lp-gridwrap', lp), stack: $('.lp-stack', lp), insp: $('.lp-insp', lp), cards: new Map(), cro: new ResizeObserver(onResize), io: null as unknown as IntersectionObserver };
+    UI.io = new IntersectionObserver(onNear, { root: UI.wrap, rootMargin: '50% 0px' });
+    let listScroll = 0;
+    UI.list.addEventListener('scroll', () => { clearTimeout(listScroll); listScroll = window.setTimeout(updateColumnValues, 80); }, { passive: true });
     const search = $('.search input', lp) as HTMLInputElement;
     search.value = S.search;
     search.oninput = () => { S.search = search.value; renderColumns(); };
@@ -168,6 +176,16 @@ function renderShell() {
     new ResizeObserver(() => layoutGrid()).observe(UI.wrap);
     setColumnsHidden(S.columnsHidden, false);
     renderToolbar(); renderBanner(); renderColumns(); renderGrid(); renderInspectorNow();
+}
+
+/** Cards scrolled near the view get a chart; ones far away give theirs up after a while to save memory. */
+function onNear(entries: IntersectionObserverEntry[]) {
+    for (const en of entries) {
+        const ref = (en.target as HTMLElement & { _ref?: CardRef })._ref;
+        if (!ref) { continue; }
+        ref.near = en.isIntersecting;
+        if (ref.near) { queue.add(ref); schedule(); } else { setTimeout(() => { if (!ref.near && !ref.pinned) { disposeChart(ref); ref.ver = undefined; } }, 5000); }
+    }
 }
 
 function onResize(entries: ResizeObserverEntry[]) {
@@ -295,14 +313,16 @@ function renderColumns() {
     const all = cols(), q = S.search.trim().toLowerCase();
     const shown = all.filter(c => !q || c.name.toLowerCase().includes(q) || dn(c.name).toLowerCase().includes(q));
     $('.count', UI.colsBox).textContent = shown.length === all.length ? String(all.length) : `${shown.length}/${all.length}`;
-    UI.list.innerHTML = !all.length ? `<div class="note">${S.status?.state === 'waiting' ? 'Waiting for data…' : 'Reading…'}</div>` : shown.length ? shown.map(c => {
+    // Thousands of rows (each with a sparkline) make the list slow; past the cap, filtering finds the rest
+    const listed = shown.slice(0, LIST_CAP);
+    UI.list.innerHTML = !all.length ? `<div class="note">${S.status?.state === 'waiting' ? 'Waiting for data…' : 'Reading…'}</div>` : shown.length ? listed.map(c => {
         const d = dn(c.name), calc = S.table.col(c.name)?.calc;
         return `<div class="col" draggable="true" data-col="${esc(c.name)}" role="listitem" title="${calc ? `calculated: ${esc(calc.formula)} (double-click to edit)` : `${KIND_NAME[c.kind]} column: drag onto a plot`}">
           <span class="k">${calc ? 'ƒ' : KIND_GLYPH[c.kind]}</span><span class="n">${esc(d)}</span>
           ${d !== c.name ? `<span class="raw">${esc(c.name)}</span>` : '<span class="v" data-v></span>'}
           <canvas width="92" height="40"></canvas>
           <button class="add" title="Add to the selected plot, or make a new one" aria-label="Add ${esc(d)}">${ic('plus', 'tiny')}</button></div>`;
-    }).join('') : `<div class="note">No column matches "${esc(S.search)}".</div>`;
+    }).join('') + (shown.length > listed.length ? `<div class="note">Showing ${fmtInt(listed.length)} of ${fmtInt(shown.length)} columns. Type in the filter to find the rest.</div>` : '') : `<div class="note">No column matches "${esc(S.search)}".</div>`;
     for (const n of $$('.col', UI.list)) {
         const col = n.dataset.col!;
         n.addEventListener('dragstart', e => { e.dataTransfer!.setData('text/plain', col); e.dataTransfer!.effectAllowed = 'copy'; startDrag(col); });
@@ -312,10 +332,14 @@ function renderColumns() {
     updateColumnValues();
 }
 
+const LIST_CAP = 400;
+/** Refresh the latest value and sparkline of the column rows scrolled into view. */
 function updateColumnValues() {
     if (!UI || UI.colsBox.classList.contains('collapsed')) { return; }
     const t = S.table, stroke = getComputedStyle(document.body).getPropertyValue('--vscode-descriptionForeground') || '#888';
+    const top = UI.list.scrollTop - 50, bottom = UI.list.scrollTop + UI.list.clientHeight + 50;
     for (const n of $$('.col', UI.list)) {
+        if (n.offsetTop + n.offsetHeight < top || n.offsetTop > bottom) { continue; }
         const c = t.col(n.dataset.col!);
         if (!c) { continue; }
         const cv = n.querySelector('canvas')!, g = cv.getContext('2d')!, v = n.querySelector('[data-v]');
@@ -430,6 +454,8 @@ function renderGrid() {
     for (const r of UI.cards.values()) { disposeChart(r); }
     UI.cards.clear();
     UI.cro.disconnect();
+    UI.io.disconnect();
+    queue.clear();
     UI.stack.innerHTML = '';
     if (S.tables.length > 1 && !S.tableName) {
         const word = sheetWord().toLowerCase();
@@ -448,7 +474,13 @@ function renderGrid() {
     grid.appendChild(nt);
     UI.stack.appendChild(grid);
     layoutGrid();
-    requestAnimationFrame(() => { if (UI) { for (const r of UI.cards.values()) { renderChart(r, true); } } });
+    // Draw cards on screen now; waiting for the IntersectionObserver would flash empty cards on every change
+    const view = UI.wrap.getBoundingClientRect(), margin = view.height / 2;
+    for (const r of UI.cards.values()) {
+        const b = r.card.getBoundingClientRect();
+        r.near = b.bottom >= view.top - margin && b.top <= view.bottom + margin;
+        if (r.near) { renderChart(r, true); }
+    }
 }
 
 function makeCard(p: Plot): HTMLElement {
@@ -459,6 +491,8 @@ function makeCard(p: Plot): HTMLElement {
     (ref.host as HTMLElement & { _ref?: CardRef })._ref = ref;
     UI!.cards.set(p.id, ref);
     UI!.cro.observe(ref.host);
+    UI!.io.observe(card);
+    (card as HTMLElement & { _ref?: CardRef })._ref = ref;
     card.addEventListener('mousedown', e => { if (!(e.target as HTMLElement).closest('button')) { select(p.id); } });
     card.addEventListener('keydown', e => { if (e.target === card && e.key === 'Enter') { select(p.id); } });
     card.addEventListener('contextmenu', e => { e.preventDefault(); select(p.id); plotMenu(e, p); });
@@ -557,17 +591,37 @@ setWorldListener(forceRebuild);
 new MutationObserver(() => { forceRebuild(); updateColumnValues(); }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
 /* ---------- redraw loop ---------- */
-let lastColumns = 0;
+// New data marks every card for a redraw; each frame redraws queued cards until its time budget is spent,
+// so many plots update in turns instead of freezing the view. Cards far off screen aren't queued.
+// After a full round the loop rests for twice the time the round took (ECharts paints on its next frame,
+// outside what is measured here), so drawing stays well under the whole CPU however many plots there are;
+// light views still update at 10 Hz.
+const BUDGET_MS = 40;
+const queue = new Set<CardRef>();
+let lastColumns = 0, timer = 0, visible = true, roundWork = 0;
+function schedule(ms = 0) { if (!timer) { timer = window.setTimeout(() => { timer = 0; requestAnimationFrame(frame); }, ms); } }
 function frame() {
-    if (dirty && UI && !document.hidden) {
+    if (!UI || document.hidden || !visible) { return; }
+    if (dirty) {
         dirty = false;
-        for (const r of UI.cards.values()) { renderChart(r); }
+        for (const r of UI.cards.values()) { if (r.near) { queue.add(r); } }
         if (Date.now() - lastColumns > 600) { lastColumns = Date.now(); updateColumnValues(); }
         updateLive();
     }
-    setTimeout(() => requestAnimationFrame(frame), 100);
+    const t0 = performance.now();
+    for (const r of queue) {
+        queue.delete(r);
+        renderChart(r);
+        if (performance.now() - t0 > BUDGET_MS) { break; }
+    }
+    roundWork += performance.now() - t0;
+    if (queue.size) { schedule(16); return; }
+    schedule(Math.min(1500, Math.max(100, roundWork * 2)));
+    roundWork = 0;
 }
-requestAnimationFrame(frame);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { dirty = true; } });
+schedule();
+function wake() { dirty = true; schedule(); }
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { wake(); } });
+document.addEventListener('lp-visible', e => { visible = (e as CustomEvent<boolean>).detail; if (visible) { wake(); } });
 
 send({ type: 'ready' });

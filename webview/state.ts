@@ -58,6 +58,9 @@ export const S = {
 
 S.source = S.table;
 
+/** Each plot's zoomed x range while zoomed in (not saved). */
+export const zooms = new Map<number, [number, number]>();
+
 /** File rows per table row for the table on screen. */
 export const rowStep = () => (S.table === S.source ? S.stride : 1);
 

@@ -83,6 +83,8 @@ export type HostToView =
     | { type: 'command'; name: string; arg?: unknown }
     | { type: 'layout'; layout: Layout; origin: LayoutOrigin; originName?: string }
     | { type: 'answer'; token: number; choice: string | null }
+    /** The tab was shown or hidden (hidden views stop drawing). */
+    | { type: 'visible'; visible: boolean }
     /** Data for the file being compared against (a previous run), or null when comparison stops. */
     | { type: 'compare'; file: string | null; data?: FromWorker };
 

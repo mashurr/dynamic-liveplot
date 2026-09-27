@@ -1,7 +1,7 @@
 // What a chart builder gets (columns sliced to the rows on show) and shared ECharts option helpers.
 
 import type { Kind } from '../../src/data/protocol';
-import { colInfo, dn, rowRange, rowStep, S, type Plot } from '../state';
+import { colInfo, dn, rowRange, rowStep, S, zooms, type Plot } from '../state';
 import { fmt, hexA, isDark, lastFinite, pal, palette } from '../util';
 
 // ECharts options are large nested objects; builders assemble them freely
@@ -17,6 +17,8 @@ export interface Built {
     summary?: string;
     /** Latest values checked against limits. */
     latest?: { name: string; value: number | null; axis: 'left' | 'right' }[];
+    /** Fewer points were drawn than rows; zooming in should redraw with more detail. */
+    decimated?: boolean;
 }
 
 export interface Theme { grid: string; axis: string; fg: string; muted: string; menu: string; menuBorder: string; border: string; err: string; live: string; accent: string; bg: string; mono: string; ui: string; dark: boolean }
@@ -65,10 +67,25 @@ export interface Ctx {
     x: (number | null)[];
     xName: string;
     cmp: Cmp | null;
+    /** The zoomed x range, when zoomed in. */
+    zoom: [number, number] | null;
 }
 
+/** Numbers with NaN/Infinity as null (what the chart builders expect), times `scale`. A plain loop: Array.from with a map is several times slower on a million rows. */
+function nullable(src: Float64Array, scale = 1): (number | null)[] {
+    const out = new Array<number | null>(src.length);
+    for (let i = 0; i < src.length; i++) { const x = src[i]; out[i] = x - x === 0 ? x * scale : null; }
+    return out;
+}
+
+// Columns converted for charts, shared by every plot drawn from the same table version (builders never
+// change these arrays), so ten plots of one column convert it once per update instead of ten times.
+const shared = { table: null as unknown, version: -1, col: new Map<string, (number | string | null)[]>(), num: new Map<string, (number | null)[]>() };
+
 export function makeCtx(p: Plot, V: Theme): Ctx {
-    const t = S.table, [a, b] = rowRange(p), cache = new Map<string, (number | string | null)[]>(), ncache = new Map<string, (number | null)[]>();
+    const t = S.table, [a, b] = rowRange(p);
+    if (shared.table !== t || shared.version !== t.version) { shared.table = t; shared.version = t.version; shared.col.clear(); shared.num.clear(); }
+    const cache = shared.col, ncache = shared.num, key = (c: string) => `${a}|${b}|${c}`;
     const kind = (c: string) => colInfo(c)?.kind;
     const ctx: Ctx = {
         p, V, a, b, n: b - a,
@@ -76,13 +93,13 @@ export function makeCtx(p: Plot, V: Theme): Ctx {
         one: id => ctx.slot(id)[0],
         kind,
         col: c => {
-            let v = cache.get(c);
-            if (!v) { v = kind(c) === 'text' ? t.texts(c, a, b) : Array.from(t.numbers(c, a, b)); cache.set(c, v); }
+            let v = cache.get(key(c));
+            if (!v) { v = kind(c) === 'text' ? t.texts(c, a, b) : Array.from(t.numbers(c, a, b)); cache.set(key(c), v); }
             return v;
         },
         num: c => {
-            let v = ncache.get(c);
-            if (!v) { v = kind(c) === 'text' ? new Array(b - a).fill(null) : Array.from(t.numbers(c, a, b), x => (Number.isFinite(x) ? x : null)); ncache.set(c, v); }
+            let v = ncache.get(key(c));
+            if (!v) { v = kind(c) === 'text' ? new Array(b - a).fill(null) : nullable(t.numbers(c, a, b)); ncache.set(key(c), v); }
             return v;
         },
         name: c => p.series[c]?.name || dn(c),
@@ -93,17 +110,19 @@ export function makeCtx(p: Plot, V: Theme): Ctx {
             return items.length ? items[items.length - 1].values : new Float64Array(0);
         },
         hist: c => t.arrays(c, S.paused ? S.pausedRows : undefined).slice(-200),
-        xc: null, timeX: false, x: [], xName: 'row', cmp: null,
+        xc: null, timeX: false, x: [], xName: 'row', cmp: null, zoom: zooms.get(p.id) ?? null,
     };
     const xc = ctx.one('x');
     ctx.xc = xc && (kind(xc) === 'num' || kind(xc) === 'time') ? xc : null;
     ctx.timeX = !!ctx.xc && kind(ctx.xc) === 'time';
     if (ctx.xc) {
-        ctx.x = ctx.timeX ? Array.from(t.numbers(ctx.xc, a, b), v => (Number.isFinite(v) ? v * 1000 : null)) : ctx.num(ctx.xc);
+        const xc = ctx.xc, k = key('\u0000ms|' + xc);
+        ctx.x = ctx.timeX ? (ncache.get(k) ?? ncache.set(k, nullable(t.numbers(xc, a, b), 1000)).get(k)!) : ctx.num(xc);
     } else {
         // Row numbers in the file, also when only one row in `step` is kept
-        const first = t.start + a, step = rowStep();
-        ctx.x = Array.from({ length: b - a }, (_, i) => (first + i) * step + 1);
+        const first = t.start + a, step = rowStep(), k = key(`\u0000row|${step}`);
+        if (!ncache.has(k)) { const xs = new Array<number>(b - a); for (let i = 0; i < xs.length; i++) { xs[i] = (first + i) * step + 1; } ncache.set(k, xs); }
+        ctx.x = ncache.get(k)!;
     }
     ctx.xName = ctx.xc ? dn(ctx.xc) : 'row';
     ctx.cmp = compareCtx(ctx);

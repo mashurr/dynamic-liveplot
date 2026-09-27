@@ -7,7 +7,7 @@ import { makeCtx, theme, type Built } from './charts/ctx';
 import { Pending } from './charts/other';
 import { ask } from './host';
 import { chartCreated, decorate } from './hooks';
-import { missingSlots, plotCols, colInfo, S, send, type Plot } from './state';
+import { missingSlots, plotCols, colInfo, S, send, zooms, type Plot } from './state';
 import { $$, esc, fmt, ic } from './util';
 
 export interface CardRef {
@@ -21,6 +21,10 @@ export interface CardRef {
     sigBase?: string;
     struct?: string;
     out?: Built;
+    /** Within about half a screen of the visible area (set by an IntersectionObserver). */
+    near?: boolean;
+    /** Drawn even when far away (for exports). */
+    pinned?: boolean;
 }
 
 // ECharts GL (loaded as a script) finds ECharts on window
@@ -53,9 +57,24 @@ export function disposeChart(ref: CardRef) {
     ref.struct = undefined;
 }
 
+/** Remember the zoomed x range; a plot drawn from fewer points than rows redraws with detail for it. */
+let zoomTimer = 0;
+function onZoom(ref: CardRef) {
+    const c = ref.chart;
+    if (!c) { return; }
+    const dz = (c.getOption().dataZoom as { start?: number; end?: number }[] | undefined)?.[0];
+    const axis = (c as unknown as { getModel(): { getComponent(t: string, i: number): { axis?: { scale: { getExtent(): [number, number] } } } | undefined } }).getModel().getComponent('xAxis', 0)?.axis;
+    if (!dz || !axis || ((dz.start ?? 0) <= 0 && (dz.end ?? 100) >= 100)) { zooms.delete(ref.p.id); } else { zooms.set(ref.p.id, axis.scale.getExtent()); }
+    if (!ref.out?.decimated) { return; }
+    clearTimeout(zoomTimer);
+    zoomTimer = window.setTimeout(() => { ref.ver = undefined; renderChart(ref); }, 150);
+}
+
 export function renderChart(ref: CardRef, force = false) {
     const p = ref.p, T = TYPES[p.type];
     if (!T) { return; }
+    // Plots far outside the view aren't drawn; they catch up when scrolled near
+    if (!ref.near && !ref.pinned) { ref.ver = undefined; return; }
     const t = S.table;
     const ver = `${t.version}|${S.paused}|${S.pausedRows}|${S.cmp?.version ?? 0}|${S.cmpFile ?? ''}`;
     const sigBase = JSON.stringify([p.type, p.slots, p.series, p.options, p.title, S.bindings, S.fileBindings, S.linkZoom, themeKey(), t.schemaVersion]);
@@ -81,6 +100,7 @@ export function renderChart(ref: CardRef, force = false) {
             renderChips(ref);
         });
         ref.chart.getZr().on('dblclick', () => ref.chart?.dispatchAction({ type: 'dataZoom', start: 0, end: 100 }));
+        ref.chart.on('datazoom', () => onZoom(ref));
         for (const f of chartCreated) { f(p, ref as CardRef & { chart: echarts.ECharts }); }
     }
     for (const f of decorate) { f(p, out.option, ref); }

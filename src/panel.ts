@@ -38,6 +38,7 @@ export class Panel {
     private tokens = 0;
     private compareId: number | null = null;
     lastLayout: Layout | null = null;
+    private wasVisible = true;
     viewState: PanelState = { state: 'waiting', text: 'Waiting for data', alerts: 0 };
 
     constructor(
@@ -214,6 +215,7 @@ export class Panel {
     applyLayout(layout: Layout, origin: 'named' | 'team', originName?: string) { this.post({ type: 'layout', layout, origin, originName }); }
 
     private focusChanged() {
+        if (this.webviewPanel.visible !== this.wasVisible) { this.wasVisible = this.webviewPanel.visible; this.post({ type: 'visible', visible: this.wasVisible }); }
         if (this.webviewPanel.active) { Panel.active = this; } else if (Panel.active === this) { Panel.active = undefined; }
         void vscode.commands.executeCommand('setContext', 'dynamicLiveplot.active', !!Panel.active);
         Panel.onChange();

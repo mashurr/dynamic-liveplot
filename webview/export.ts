@@ -6,6 +6,7 @@ import { TYPES } from './charts/registry';
 import { alpha, theme } from './charts/ctx';
 import { extensions } from './hooks';
 import { notify } from './host';
+import { disposeChart, renderChart, type CardRef } from './render';
 import { colInfo, dn, plotCols, rowRange, rowStep, S, send, type Plot } from './state';
 import { esc, fmt, fmtInt, ic } from './util';
 
@@ -14,6 +15,13 @@ const chartOf = (p: Plot) => {
     return host ? echarts.getInstanceByDom(host) ?? null : null;
 };
 const cardOf = (p: Plot) => document.querySelector<HTMLElement>(`.card[data-id="${p.id}"]`);
+
+/** Plots far off screen have no chart; draw them for the export, then let them go again. */
+function withAllDrawn<T>(plots: Plot[], fn: () => T): T {
+    const refs = plots.map(p => (cardOf(p) as (HTMLElement & { _ref?: CardRef }) | null)?._ref).filter((r): r is CardRef => !!r);
+    for (const r of refs) { if (!r.chart) { r.pinned = true; renderChart(r, true); } }
+    try { return fn(); } finally { for (const r of refs) { if (r.pinned) { r.pinned = false; if (!r.near) { disposeChart(r); r.ver = undefined; } } } }
+}
 const bg = () => theme().bg;
 const fileBase = () => (S.table.file || S.path).split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') || 'liveplot';
 const safe = (s: string) => s.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'plot';
@@ -231,7 +239,7 @@ ${figs}
 }
 
 function exportGrid() {
-    const url = gridPng();
+    const url = withAllDrawn(S.plots, gridPng);
     if (!url) { notify('There are no plots to export yet.'); return; }
     save(`${safe(fileBase())} plots.png`, dataUrlB64(url), 'base64', 'PNG image');
 }
@@ -247,7 +255,7 @@ function exportMenuItems(p: Plot | null) {
             { sep: true },
         ] : []),
         { label: 'Save All Plots as PNG…', run: exportGrid },
-        { label: 'Save Report as HTML…', run: () => save(`${safe(fileBase())} report.html`, utf8b64(report()), 'base64', 'HTML') },
+        { label: 'Save Report as HTML…', run: () => save(`${safe(fileBase())} report.html`, utf8b64(withAllDrawn(S.plots, report)), 'base64', 'HTML') },
     ];
 }
 
